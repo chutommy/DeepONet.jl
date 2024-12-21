@@ -2,6 +2,7 @@ using GaussianRandomFields
 using Plots
 using NumericalIntegration
 using Flux
+using Random
 # using Statistics
 using ProgressMeter
 # using LinearAlgebra
@@ -17,9 +18,9 @@ using ProgressMeter
 
 
 
-"""
+```
 ParallelDense
-"""
+```
 
 struct ParallelDense
 	W::AbstractMatrix
@@ -40,15 +41,18 @@ function (dense::ParallelDense)(x)
 end
 
 
-"""
+```
 OperatorNet
-"""
+```
 
 struct OperatorNet
 	layers::Chain
 end
 
-function OperatorNet(in_dim::Int, out_dim::Int, act::Array{<:Function}, sizes::Array{Int})
+function OperatorNet(
+	in_dim::Int, out_dim::Int,
+	act::Array{<:Function}, sizes::Array{Int},
+)
 	layers = []
 	from = in_dim
 	for to in sizes
@@ -64,26 +68,31 @@ function (opnet::OperatorNet)(x)
 end
 
 
-"""
+```
 DeepONet
-"""
+```
 
-# struct DeepONet
-# 	trunk::OperatorNet
-# end
+struct DeepONet
+	branch::OperatorNet
+	trunk::OperatorNet
+	fuser::OperatorNet
+end
 
-model = let neurons = 40, in1 = M, in2 = 1, output_neurons = 20
-	act = [gelu, tanh]
-	branch = OperatorNet(in1, output_neurons, act, [neurons, neurons])
-	trunk = OperatorNet(in2, output_neurons, act, [neurons, neurons])
-	fuser = ParallelDense(output_neurons, 1, [identity])
+function DeepONet(
+	branch_dim::Int, trunk_dim::Int, output_dim::Int, act::Array{<:Function};
+	branch_sizes::Array{Int}, trunk_sizes::Array{Int}, output_sizes::Array{Int},
+)
+	branch = OperatorNet(branch_dim, output_dim, act, branch_sizes)
+	trunk = OperatorNet(trunk_dim, output_dim, act, trunk_sizes)
+	fuser = OperatorNet(output_dim, 1, [identity], output_sizes)
+	return DeepONet(branch, trunk, fuser)
+end
 
-	function fwd(u, x)
-		b = branch(u)
-		t = trunk(x)
-		output = fuser(b .* t)
-		return output
-	end
+function (model::DeepONet)(u, x)
+	branch = model.branch(u)
+	trunk = model.trunk(x)
+	output = model.fuser(branch .* trunk)
+	return output
 end
 
 
@@ -94,43 +103,71 @@ end
 
 
 
+```
+RandomField
+```
+
+struct RandomFieldGenerator
+	mean::AbstractVector
+	cov::AbstractCovarianceFunction
+	generator::GaussianRandomFieldGenerator
+	grf::GaussianRandomField
+end
+
+function RandomFieldGenerator(
+	points::AbstractVector, dim::Int, size::Int;
+	μ::Float64, σ::Float64, λ::Float64,
+)
+	model = Gaussian(λ, σ = σ)
+	mean = fill(μ, (size))
+	covf = CovarianceFunction(dim, model)
+	generator = CirculantEmbedding()
+	grf = GaussianRandomField(mean, covf, generator, points)
+	return RandomFieldGenerator(mean, covf, generator, grf)
+end
+
+(generator::RandomFieldGenerator)() = sample(generator.grf)
 
 
 
 
 
 
-EPOCHS = 30
-M = 100
-N = 110
+# integrals
+
+EPOCHS = 10
+M = 200
+K = 10
 D = 1
 A, B = 0, 1
 
 μ = 0.0
-λ = 0.3
-σ = 3
+λs = range(0.1, stop = 0.5, length = 10)
+σs = range(1.0, stop = 10, length = 5)
 
-gauss = Gaussian(λ, σ = σ)
-covf = CovarianceFunction(D, gauss)
-pts = range(A, stop = B, length = M)
-mean = fill(μ, (M));
-generator = CirculantEmbedding()
-grf = GaussianRandomField(mean, covf, generator, pts)
+points = range(A, stop = B, length = M)
+generators = [
+	RandomFieldGenerator(points, D, M; μ = 0.0, σ = σ, λ = λ)
+	for λ in λs, σ in σs
+]
 
+G = length(generators)
+N = G * K
 U = zeros(Float32, (M, N))
-for i in 1:N
-	U[:, i] = sample(grf)
+for i in 1:K, j in 1:G
+	id = (i - 1) * G + j
+	U[:, id] = generators[j]()
 end
-show = 20
-plot(pts, U[:, 1:show], label = "")
+show = 30
+plot(points, U[:, 1:show], label = "", lw = 2)
 heatmap(U[:, 1:show]')
 
-S = cumul_integrate(pts, U', dims = 1)
+S = cumul_integrate(points, U', dims = 1)
 heatmap(S[:, 1:show]')
 
-i = 10
-plot(pts, U[:, i], label = "f(pts)", lw = 2)
-plot!(pts, S[:, i], label = "F(pts)", lw = 2)
+i = 3
+plot(points, U[:, i], label = "f(points)", lw = 2)
+plot!(points, S[:, i], label = "F(points)", lw = 2)
 
 Us = zeros(Float32, (M, M * N))
 xs = zeros(Float32, (1, M * N))
@@ -140,113 +177,92 @@ for i in 1:N
 	a = (i - 1) * M + 1
 	b = i * M
 	Us[:, a:b] .= U[:, i]
-	xs[:, a:b] = collect(pts)[1:M]
+	xs[:, a:b] = collect(points)[1:M]
 	Ss[:, a:b] = S[:, i]
 end
 
-test_train_split = 0.99
 n_train = Int(floor(test_train_split * M * N))
+shuffle_view = shuffle(1:M*N)
+train_view = shuffle_view[1:n_train]
+test_view = shuffle_view[n_train+1:end]
 
-U_train = Us[:, 1:n_train]
-x_train = xs[:, 1:n_train]
-S_train = Ss[:, 1:n_train]
+U_train = Us[:, train_view]
+x_train = xs[:, train_view]
+S_train = Ss[:, train_view]
 
-U_test = Us[:, 1+n_train:end]
-x_test = xs[:, 1+n_train:end]
-S_test = Ss[:, 1+n_train:end]
+U_test = Us[:, test_view]
+x_test = xs[:, test_view]
+S_test = Ss[:, test_view]
 
-BATCH_SIZE = 512
+BATCH_SIZE = 1024
 train_loader = Flux.DataLoader((U_train, x_train, S_train), batchsize = BATCH_SIZE, shuffle = true);
 test_loader = Flux.DataLoader((U_test, x_test, S_test), batchsize = BATCH_SIZE, shuffle = true);
 
-for (u_, x_, s_) in train_loader
-	println(size(u_), size(x_), size(s_))
-	break
+
+
+model = DeepONet(M, 1, 32, [gelu],
+	branch_sizes = [64, 64, 64],
+	trunk_sizes = [128, 128, 128, 128],
+	output_sizes = [8, 8],
+)
+opt_state = Flux.setup(Flux.Adam(0.0003), model)
+
+function evaluate(model, loader)
+	loss = 0
+	for (u, pts, s) in loader
+		s_hat = model(u, pts)
+		loss += Flux.Losses.mse(s_hat, s)
+	end
+	return loss
 end
 
-for (u_, x_, s_) in test_loader
-	println(size(u_), size(x_), size(s_))
-	break
-end
-
-# struct Model
-# 	branch_net::Chain
-# 	trunk_net::Chain
-# 	joint::Dense
-# end
-
-# function create_layers(input_dim::Int, output_dim::Int, layer_sizes::Tuple{Vararg{Int}})
-# 	layers = []
-# 	in_features = input_dim
-# 	for out_features in layer_sizes
-# 		push!(layers, Dense(in_features => out_features, relu))
-# 		in_features = out_features
-# 	end
-# 	push!(layers, Dense(in_features => output_dim))
-# 	return layers
-# end
-
-# function (model::Model)(branch_input::AbstractArray, trunk_input::AbstractArray)
-# 	branch_output = model.branch_net(branch_input)
-# 	trunk_output = model.trunk_net(trunk_input)
-# 	joint_output = model.joint(branch_output .* trunk_output)
-# 	return joint_output
-# end
-
-# function DeepNet(
-# 	branch_input_dim::Int,
-# 	trunk_input_dim::Int,
-# 	output_dim::Int,
-# 	branch_layer_sizes::Tuple{Vararg{Int}},
-# 	trunk_layer_sizes::Tuple{Vararg{Int}},
-# )
-# 	branch_layers = Chain(create_layers(branch_input_dim, output_dim, branch_layer_sizes))
-# 	trunk_layers = Chain(create_layers(trunk_input_dim, output_dim, trunk_layer_sizes))
-#     joint_layer = Dense(output_dim => 1)
-# 	return Model(branch_layers, trunk_layers, joint_layer)
-# end
-
-# in1, in2, out12 = M, 1, 20
-# branch1_sizes = (40,)
-# branch2_sizes = (40, 40)
-# model = DeepNet(in1, in2, out12, branch1_sizes, branch2_sizes)
-
-
-opt_state = Flux.setup(Flux.Adam(0.003), model)
-
-losses = []
+train_losses = []
+test_losses = []
 @showprogress for epoch in 1:EPOCHS
+	test_loss = evaluate(model, test_loader)
 	train_loss = 0
-	for (u_, x_, s_) in train_loader
+	for (u, pts, s) in train_loader
 		loss, grads = Flux.withgradient(model) do m
-			x_ = reshape(x_, (1, length(x_)))
-			s_ = reshape(s_, (1, length(s_)))
-			y_hat = m(u_, x_)
-			Flux.Losses.mse(y_hat, s_)
+			s_hat = m(u, pts)
+			Flux.Losses.mse(s_hat, s)
 		end
 		Flux.update!(opt_state, model, grads[1])
 		train_loss += loss
 	end
-	push!(losses, train_loss / BATCH_SIZE)
+	push!(train_losses, train_loss / BATCH_SIZE)
+	push!(test_losses, test_loss / BATCH_SIZE)
 end
 
-plot(losses; yaxis = "loss", label = "per batch")
+plot(train_losses; yaxis = "loss", label = "train")
+plot!(test_losses; yaxis = "loss", label = "test")
 
-# f(pts) = sin(-exp(-pts + 2)) * exp(-pts + 2)
-# F(pts) = -cos(-exp(-pts + 2)) - -cos(-exp(2))
-f(x) = -cos(3 * x) * 3
-F(x) = -sin(3 * x)
-fx = f.(pts)
-Fx = F.(pts)
+# f(points) = sin(-exp(-points + 2)) * exp(-points + 2)
+# F(points) = -cos(-exp(-points + 2)) - -cos(-exp(2))
+# f(x) = -cos(3 * x) * 3
+# F(x) = -sin(3 * x)
+# a = 17
+# f(x) = cos(a * x) * a
+# F(x) = sin(a * x)
+# fx = f.(points)
+# Fx = F.(points)
+
+fx = U[:, 203]
+Fx = S[:, 203]
+
 Gx = zeros(Float32, (M))
 u_ = zeros(Float32, ((M, M)))
 x_ = zeros(Float32, ((1, M)))
 for i in 1:M
 	u_[:, i] = fx
-	x_[1, i] = pts[i]
+	x_[1, i] = points[i]
 end
 Gx = model(u_, x_)
-plot(pts, fx, label = "f", lw = 2)
-plot!(pts, Fx, label = "F", lw = 2)
-plot!(pts, Gx', label = "G", lw = 2)
+plot(points, fx, label = "f", lw = 2)
+plot(points, Fx, label = "F", lw = 2)
+plot!(points, Gx', label = "G", lw = 2)
 
+
+
+
+
+# burger's equation
