@@ -1,14 +1,75 @@
-using DeepONet
 using GaussianRandomFields
 using Plots
 using NumericalIntegration
 using Flux
-using Statistics
+# using Statistics
 using ProgressMeter
-using LinearAlgebra
-using ArgCheck
-using ConcreteStructs
-using LuxCore
+# using LinearAlgebra
+# using ArgCheck
+# using ConcreteStructs
+# using LuxCore
+
+
+
+
+
+
+
+
+
+
+
+struct ParallelDense
+	W::AbstractMatrix
+	b::AbstractVector
+	act::Array{Function}
+end
+
+function ParallelDense(in::Int, out::Int, act::Array{<:Function})
+	ParallelDense(Flux.glorot_normal(out, in), zeros(Float32, out), act)
+end
+
+function (d::ParallelDense)(x)
+	preactivation = d.W * x .+ d.b
+	activation = [act(preactivation) for act in d.act]
+	return cat(activation..., dims = 1)
+end
+
+model = let neurons = 40, in1 = M, in2 = 1, output_neurons = 20
+	act = [gelu, tanh, identity]
+	actsize = length(act)
+	branch1 = ParallelDense(in1, neurons, act)
+	branch2 = ParallelDense(actsize*neurons, neurons, act)
+	branch3 = ParallelDense(actsize*neurons, output_neurons, act)
+
+	trunk1 = ParallelDense(in2, neurons, act)
+	trunk2 = ParallelDense(actsize*neurons, neurons, act)
+	trunk3 = ParallelDense(actsize*neurons, neurons, act)
+	trunk4 = ParallelDense(actsize*neurons, output_neurons, act)
+
+	adjoint = Dense(actsize * output_neurons => 1, [identity])
+
+	function fwd(u, x)
+		branch = branch3(branch2(branch1(u)))
+		trunk = trunk4(trunk3(trunk2(trunk1(x))))
+		output = adjoint(branch .* trunk)
+		return output
+	end
+end
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 EPOCHS = 30
 M = 100
@@ -41,10 +102,6 @@ heatmap(S[:, 1:show]')
 i = 10
 plot(pts, U[:, i], label = "f(pts)", lw = 2)
 plot!(pts, S[:, i], label = "F(pts)", lw = 2)
-
-size(U)
-size(pts)
-size(S)
 
 Us = zeros(Float32, (M, M * N))
 xs = zeros(Float32, (1, M * N))
@@ -125,34 +182,6 @@ end
 # branch2_sizes = (40, 40)
 # model = DeepNet(in1, in2, out12, branch1_sizes, branch2_sizes)
 
-struct Layer
-	W::Matrix
-	b::Vector
-end
-(d::Layer)(x) = d.W * x .+ d.b
-function Layer(in::Int, out::Int)
-	Layer(Flux.glorot_normal(out, in), zeros(Float32, out))
-end
-
-model = let neurons = 40, in1 = M, in2 = 1, output_neurons = 20
-	branch1 = Layer(in1, neurons)
-	branch2 = Layer(neurons, neurons)
-	branch3 = Layer(neurons, output_neurons)
-
-	trunk1 = Layer(in2, neurons)
-	trunk2 = Layer(neurons, neurons)
-	trunk3 = Layer(neurons, neurons)
-	trunk4 = Layer(neurons, output_neurons)
-
-	adjoint = Layer(output_neurons, 1)
-
-    function fwd(u, x)
-        branch = branch3(gelu(branch2(gelu(branch1(u)))))
-        trunk = trunk4(gelu(trunk3(gelu(trunk2(gelu(trunk1(x)))))))
-        output = adjoint(branch .* trunk)
-        return output
-    end
-end
 
 opt_state = Flux.setup(Flux.Adam(0.003), model)
 
@@ -192,8 +221,3 @@ plot(pts, fx, label = "f", lw = 2)
 plot!(pts, Fx, label = "F", lw = 2)
 plot!(pts, Gx', label = "G", lw = 2)
 
-
-
-plot(pts, U_test[:, 1], label = "u")
-plot!(x_test[1:M], S_test[1:M], label = "s")
-plot!(pts, model(U_test[:, 1], x_test[1:M])', label = "G")

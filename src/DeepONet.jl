@@ -1,5 +1,7 @@
 module DeepONet
 
-greet() = print("Hello World!")
+include("include.jl")
+
+using Flux
 
 end # module DeepONet
