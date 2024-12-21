@@ -1,0 +1,4 @@
+name = "DeepONet"
+uuid = "f5d89359-17ff-402f-9b78-4f106bdd986e"
+authors = ["Tommy Chu <chutommy@fit.cvut.cz>"]
+version = "0.1.0"
