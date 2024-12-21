@@ -7,7 +7,6 @@ using ProgressMeter
 # using LinearAlgebra
 # using ArgCheck
 # using ConcreteStructs
-# using LuxCore
 
 
 
@@ -18,6 +17,9 @@ using ProgressMeter
 
 
 
+"""
+ParallelDense
+"""
 
 struct ParallelDense
 	W::AbstractMatrix
@@ -25,34 +27,61 @@ struct ParallelDense
 	act::Array{Function}
 end
 
-function ParallelDense(in::Int, out::Int, act::Array{<:Function})
-	ParallelDense(Flux.glorot_normal(out, in), zeros(Float32, out), act)
+function ParallelDense(in_dim::Int, out_dim::Int, act::Array{<:Function})
+	W = Flux.glorot_normal(out_dim, in_dim)
+	b = Flux.glorot_normal(out_dim)
+	return ParallelDense(W, b, act)
 end
 
-function (d::ParallelDense)(x)
-	preactivation = d.W * x .+ d.b
-	activation = [act(preactivation) for act in d.act]
-	return cat(activation..., dims = 1)
+function (dense::ParallelDense)(x)
+	pre = dense.W * x .+ dense.b
+	act = [act.(pre) for act in dense.act]
+	return cat(act..., dims = 1)
 end
+
+
+"""
+OperatorNet
+"""
+
+struct OperatorNet
+	layers::Chain
+end
+
+function OperatorNet(in_dim::Int, out_dim::Int, act::Array{<:Function}, sizes::Array{Int})
+	layers = []
+	from = in_dim
+	for to in sizes
+		push!(layers, ParallelDense(from, to, act))
+		from = to * length(act)
+	end
+	push!(layers, Dense(from => out_dim, identity))
+	return OperatorNet(Chain(layers))
+end
+
+function (opnet::OperatorNet)(x)
+	return opnet.layers(x)
+end
+
+
+"""
+DeepONet
+"""
+
+# struct DeepONet
+# 	trunk::OperatorNet
+# end
 
 model = let neurons = 40, in1 = M, in2 = 1, output_neurons = 20
-	act = [gelu, tanh, identity]
-	actsize = length(act)
-	branch1 = ParallelDense(in1, neurons, act)
-	branch2 = ParallelDense(actsize*neurons, neurons, act)
-	branch3 = ParallelDense(actsize*neurons, output_neurons, act)
-
-	trunk1 = ParallelDense(in2, neurons, act)
-	trunk2 = ParallelDense(actsize*neurons, neurons, act)
-	trunk3 = ParallelDense(actsize*neurons, neurons, act)
-	trunk4 = ParallelDense(actsize*neurons, output_neurons, act)
-
-	adjoint = Dense(actsize * output_neurons => 1, [identity])
+	act = [gelu, tanh]
+	branch = OperatorNet(in1, output_neurons, act, [neurons, neurons])
+	trunk = OperatorNet(in2, output_neurons, act, [neurons, neurons])
+	fuser = ParallelDense(output_neurons, 1, [identity])
 
 	function fwd(u, x)
-		branch = branch3(branch2(branch1(u)))
-		trunk = trunk4(trunk3(trunk2(trunk1(x))))
-		output = adjoint(branch .* trunk)
+		b = branch(u)
+		t = trunk(x)
+		output = fuser(b .* t)
 		return output
 	end
 end
