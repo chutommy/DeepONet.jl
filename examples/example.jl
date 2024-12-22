@@ -3,8 +3,8 @@ using Plots
 using NumericalIntegration
 using Flux
 using Random
-# using Statistics
 using ProgressMeter
+# using Statistics
 # using LinearAlgebra
 # using ArgCheck
 # using ConcreteStructs
@@ -135,7 +135,7 @@ end
 
 # integrals
 
-EPOCHS = 10
+EPOCHS = 30
 M = 200
 K = 10
 D = 1
@@ -181,6 +181,7 @@ for i in 1:N
 	Ss[:, a:b] = S[:, i]
 end
 
+test_train_split = 0.8
 n_train = Int(floor(test_train_split * M * N))
 shuffle_view = shuffle(1:M*N)
 train_view = shuffle_view[1:n_train]
@@ -200,10 +201,10 @@ test_loader = Flux.DataLoader((U_test, x_test, S_test), batchsize = BATCH_SIZE, 
 
 
 
-model = DeepONet(M, 1, 32, [gelu],
-	branch_sizes = [64, 64, 64],
-	trunk_sizes = [128, 128, 128, 128],
-	output_sizes = [8, 8],
+model = DeepONet(M, 1, 32, [gelu, tanh],
+	branch_sizes = [ntuple(Returns(64), 3)...],
+	trunk_sizes = [ntuple(Returns(128), 4)...],
+	output_sizes = [4, 4],
 )
 opt_state = Flux.setup(Flux.Adam(0.0003), model)
 
@@ -246,8 +247,8 @@ plot!(test_losses; yaxis = "loss", label = "test")
 # fx = f.(points)
 # Fx = F.(points)
 
-fx = U[:, 203]
-Fx = S[:, 203]
+fx = U[:, 293]
+Fx = S[:, 293]
 
 Gx = zeros(Float32, (M))
 u_ = zeros(Float32, ((M, M)))
@@ -266,3 +267,110 @@ plot!(points, Gx', label = "G", lw = 2)
 
 
 # burger's equation
+using DataDeps
+using MAT
+using MLUtils
+using Printf
+using Plots
+using Flux
+
+filepath = "burgers_data_R10.mat"
+
+N = 100
+Δsamples = 2^3
+grid_size = div(2^13, Δsamples)
+T = Float32
+
+file = matopen(filepath)
+x_data = reshape(T.(collect(read(file, "a")[1:N, 1:Δsamples:end])), N, :, 1)
+y_data = reshape(T.(collect(read(file, "u")[1:N, 1:Δsamples:end])), N, :, 1)
+close(file)
+
+x_data = permutedims(x_data, (2, 1, 3))
+grid = reshape(T.(collect(range(0, 1; length = grid_size)')), :, grid_size, 1)
+
+x_data_dev = x_data[:, :, 1]
+y_data_dev = y_data[:, :, 1]'
+M = 1024
+
+X = zeros(Float32, (M, M * N))
+Y = zeros(Float32, (1, M * N))
+g = zeros(Float32, (1, M * N))
+for i in 1:N
+	a, b = (i - 1) * M + 1, i * M
+	X[:, a:b] .= x_data_dev[:, i]
+	Y[:, a:b] = y_data_dev[:, i]
+	g[:, a:b] = grid[:]
+end
+
+BATCH_SIZE = 1024
+train_loader = Flux.DataLoader((X, g, Y), batchsize = BATCH_SIZE, shuffle = false);
+
+
+model = DeepONet(size(x_data, 1), 1, 32, [gelu, tanh],
+	branch_sizes = [ntuple(Returns(32), 5)...],
+	trunk_sizes = [ntuple(Returns(32), 5)...],
+	output_sizes = [1],
+)
+opt_state = Flux.setup(Flux.Adam(0.0003), model)
+
+EPOCHS = 30
+train_losses = []
+@showprogress for epoch in 1:EPOCHS
+	train_loss = 0
+	for (u, pts, s) in train_loader
+		loss, grads = Flux.withgradient(model) do m
+			s_hat = m(u, pts)
+			Flux.Losses.mse(s_hat, s)
+		end
+		Flux.update!(opt_state, model, grads[1])
+		train_loss += loss
+	end
+	push!(train_losses, train_loss / BATCH_SIZE)
+end
+
+
+plot(train_losses; yaxis = "loss", label = "train")
+
+
+using CairoMakie
+
+i = 0
+preds = []
+for (u, pts, s) in train_loader
+	push!(preds, (pts, model(u, pts), s))
+
+	i += 1
+	i >= 16 && break
+end
+
+begin
+	fig = Figure(; size = (1024, 1024))
+
+	axs = [Axis(fig[i, j]) for i in 1:4, j in 1:4]
+	for i in 1:4, j in 1:4
+		idx = i + (j - 1) * 4
+		ax = axs[i, j]
+		l1 = lines!(ax, vec(preds[idx][1]), vec(preds[idx][2]))
+		l2 = lines!(ax, vec(preds[idx][1]), vec(preds[idx][3]))
+
+		i == 4 && (ax.xlabel = "x")
+		j == 1 && (ax.ylabel = "u(x)")
+
+		if i == 1 && j == 1
+			axislegend(ax, [l1, l2], ["Predictions", "Ground Truth"])
+		end
+	end
+	linkaxes!(axs...)
+
+	fig[0, :] = Label(fig, "Burgers Equation using DeepONet"; tellwidth = false, font = :bold)
+
+	fig
+end
+
+
+
+
+
+
+# darcy's flow
