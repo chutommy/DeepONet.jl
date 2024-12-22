@@ -1,5 +1,6 @@
 [deps]
 CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
+DeepONet = "f5d89359-17ff-402f-9b78-4f106bdd986e"
 Flux = "587475ba-b771-5e3f-ad9e-33799f191a9c"
 GaussianRandomFields = "e4b2fa32-6e09-5554-b718-106ed5adafe9"
 NPZ = "15e1cf62-19b3-5cfa-8e77-841668bca605"
@@ -7,3 +8,4 @@ NumericalIntegration = "e7bfaba1-d571-5449-8927-abc22e82249b"
 Plots = "91a5bcdd-55d7-5caf-9e0b-520d859cae80"
 ProgressMeter = "92933f4c-e287-5a05-a399-4b506db050ca"
 Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
+Revise = "295af30f-e4ad-537b-8983-00126c2a3abe"

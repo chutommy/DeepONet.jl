@@ -10,6 +10,7 @@ using Flux
 using GaussianRandomFields
 using ProgressMeter
 using Random
+using Suppressor
 
 include("include.jl")
 

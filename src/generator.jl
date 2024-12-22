@@ -34,8 +34,12 @@ function generate_random_fields(
 	means::Vector, stds::Vector, params::Vector,
 	K::Int,
 )
-	generators = [RandomFieldGenerator(points, dim, size; mean = m, std = s, param = p)
-				  for p in params, s in stds, m in means]
+	generators = Vector{RandomFieldGenerator}()
+	for p in params, s in stds, m in means
+		@suppress begin
+			push!(generators, RandomFieldGenerator(points, dim, size; mean = m, std = s, param = p))
+		end
+	end
 	gsize = length(generators)
 	total = gsize * K
 	out = zeros(Float32, (size, total))

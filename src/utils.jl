@@ -10,11 +10,17 @@ function uxs_split(U::Matrix, X::Matrix, S::Matrix; split::Real, toshuffle::Bool
 end
 
 function evaluate(model::Model, loader::Flux.DataLoader; loss_fn = Flux.Losses.mse)
-	return sum(loss_fn(model(u, x), s) for (u, x, s) in loader)
+	loss = 0.0
+	for (u, x, s) in loader
+		s_hat = model(u, x)
+		loss += loss_fn(s_hat, s)
+	end
+	return loss
 end
 
 function train!(
 	model::Model,
+	opt_state::NamedTuple,
 	train_loader::Flux.DataLoader,
 	test_loader::Flux.DataLoader;
 	epochs::Int = 30,
@@ -25,7 +31,8 @@ function train!(
 	@showprogress for e in 1:epochs
 		for (u, x, s) in train_loader
 			loss, grads = Flux.withgradient(model) do m
-				loss_fn(m(u, x), s)
+				s_hat = m(u, x)
+				loss_fn(s_hat, s)
 			end
 			Flux.update!(opt_state, model, grads[1])
 			train_losses[e] += loss

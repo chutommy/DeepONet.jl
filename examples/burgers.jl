@@ -1,4 +1,10 @@
-burgers = npzread("data/npz/burgers_equation.npz")
+using CairoMakie
+using DeepONet
+using Flux
+using NPZ
+using Plots
+
+burgers = npzread("examples/data/npz/burgers_equation.npz")
 
 X_train, y_train = burgers["x_train"], burgers["y_train"]
 X_test, y_test = burgers["x_test"], burgers["y_test"]
@@ -33,22 +39,20 @@ uxs_train, uxs_test = uxs_split(Us, Xs, Ss; split = 0.5, toshuffle = true)
 U_train, x_train, S_train = uxs_train
 U_test, x_test, S_test = uxs_test
 
-BATCH_SIZE = 1024
+BATCH_SIZE = 256
 train_loader = Flux.DataLoader((U_train, x_train, S_train), batchsize = BATCH_SIZE);
 test_loader = Flux.DataLoader((U_test, x_test, S_test), batchsize = BATCH_SIZE);
 
-model = Model(size(U_train, 1), 2, 32, [gelu, tanh],
-	branch_sizes = [32 for _ in 1:5],
-	trunk_sizes = [32 for _ in 1:5],
+model = Model(size(U_train, 1), 2, 20, [gelu, tanh],
+	branch_sizes = [30, 30],
+	trunk_sizes = [30, 30],
 	output_sizes = [1],
 )
 opt_state = Flux.setup(Flux.AdamW(0.0003), model)
-train_losses, test_losses = train!(model, train_loader, test_loader)
-plot(train_losses; yaxis = "loss", label = "train", lw = 2)
-plot!(test_losses; yaxis = "loss", label = "test", lw = 2)
+train_losses, test_losses = train!(model, opt_state, train_loader, test_loader)
+Plots.plot(train_losses; yaxis = "loss", label = "train", lw = 2)
+Plots.plot!(test_losses; yaxis = "loss", label = "test", lw = 2)
 
-
-using CairoMakie
 
 i = 0
 preds = []

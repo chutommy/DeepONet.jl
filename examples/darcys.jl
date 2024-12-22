@@ -1,4 +1,9 @@
-darcys = npzread("data/npz/darcys_flow.npz")
+using DeepONet
+using Flux
+using NPZ
+using Plots
+
+darcys = npzread("examples/data/npz/darcys_flow.npz")
 
 X_train, y_train = darcys["x_train"], darcys["y_train"]
 X_test, y_test = darcys["x_test"], darcys["y_test"]
@@ -35,20 +40,19 @@ uxs_train, uxs_test = uxs_split(Us, Xs, Ss; split = 0.5, toshuffle = true)
 U_train, x_train, S_train = uxs_train
 U_test, x_test, S_test = uxs_test
 
-BATCH_SIZE = 1024
+BATCH_SIZE = 256
 train_loader = Flux.DataLoader((U_train, x_train, S_train), batchsize = BATCH_SIZE);
 test_loader = Flux.DataLoader((U_test, x_test, S_test), batchsize = BATCH_SIZE);
 
-model = Model(M * M, 2, 32, [gelu, tanh],
-	branch_sizes = [ntuple(Returns(32), 5)...],
-	trunk_sizes = [ntuple(Returns(32), 5)...],
+model = Model(M * M, 2, 20, [gelu, tanh],
+	branch_sizes = [30, 30],
+	trunk_sizes = [30, 30],
 	output_sizes = [1],
 )
 opt_state = Flux.setup(Flux.AdamW(0.0003), model)
-train_losses, test_losses = train!(model, train_loader, test_loader)
+train_losses, test_losses = train!(model, opt_state, train_loader, test_loader)
 plot(train_losses; yaxis = "loss", label = "train", lw = 2)
 plot!(test_losses; yaxis = "loss", label = "test", lw = 2)
-
 
 i = 0
 preds = []
