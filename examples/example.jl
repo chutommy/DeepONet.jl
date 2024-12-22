@@ -136,8 +136,8 @@ end
 # integrals
 
 EPOCHS = 30
-M = 200
-K = 10
+M = 100
+K = 50
 D = 1
 A, B = 0, 1
 
@@ -202,9 +202,9 @@ test_loader = Flux.DataLoader((U_test, x_test, S_test), batchsize = BATCH_SIZE, 
 
 
 model = DeepONet(M, 1, 32, [gelu, tanh],
-	branch_sizes = [ntuple(Returns(64), 3)...],
-	trunk_sizes = [ntuple(Returns(128), 4)...],
-	output_sizes = [4, 4],
+	branch_sizes = [32, 32],
+	trunk_sizes = [64, 64, 64],
+	output_sizes = [4],
 )
 opt_state = Flux.setup(Flux.Adam(0.0003), model)
 
@@ -267,52 +267,47 @@ plot!(points, Gx', label = "G", lw = 2)
 
 
 # burger's equation
-using DataDeps
-using MAT
-using MLUtils
-using Printf
-using Plots
-using Flux
+using NPZ
 
-filepath = "burgers_data_R10.mat"
+burgers = npzread("data/npz/burgers_equation.npz")
 
-N = 100
-Δsamples = 2^3
-grid_size = div(2^13, Δsamples)
-T = Float32
+x_train = burgers["x_train"]
+y_train = burgers["y_train"]
 
-file = matopen(filepath)
-x_data = reshape(T.(collect(read(file, "a")[1:N, 1:Δsamples:end])), N, :, 1)
-y_data = reshape(T.(collect(read(file, "u")[1:N, 1:Δsamples:end])), N, :, 1)
-close(file)
+x_train = PermutedDimsArray(x_train, (2, 1))
+y_train = PermutedDimsArray(y_train, (3, 2, 1))
+M, T, N = size(y_train)
 
-x_data = permutedims(x_data, (2, 1, 3))
-grid = reshape(T.(collect(range(0, 1; length = grid_size)')), :, grid_size, 1)
+plot(y_train[:, :, 1])
 
-x_data_dev = x_data[:, :, 1]
-y_data_dev = y_data[:, :, 1]'
-M = 1024
+X = zeros(Float32, (M, N * T * M))
+Y = zeros(Float32, (1, N * T * M))
+g = zeros(Float32, (2, N * T * M))
 
-X = zeros(Float32, (M, M * N))
-Y = zeros(Float32, (1, M * N))
-g = zeros(Float32, (1, M * N))
-for i in 1:N
-	a, b = (i - 1) * M + 1, i * M
-	X[:, a:b] .= x_data_dev[:, i]
-	Y[:, a:b] = y_data_dev[:, i]
-	g[:, a:b] = grid[:]
+for n in 1:N, t in 1:T
+	ni = (n - 1) * M * T
+	ti = (t - 1) * M
+	a = ni + ti + 1
+	b = ni + ti + M
+
+	X[:, a:b] .= x_train[:, n]
+	Y[:, a:b] = y_train[:, t, n]
+
+	g[1, a:b] .= collect(1:M)
+	g[2, a:b] .= t
 end
+
 
 BATCH_SIZE = 1024
 train_loader = Flux.DataLoader((X, g, Y), batchsize = BATCH_SIZE, shuffle = false);
 
 
-model = DeepONet(size(x_data, 1), 1, 32, [gelu, tanh],
+model = DeepONet(size(x_data, 1), 2, 32, [gelu, tanh],
 	branch_sizes = [ntuple(Returns(32), 5)...],
 	trunk_sizes = [ntuple(Returns(32), 5)...],
 	output_sizes = [1],
 )
-opt_state = Flux.setup(Flux.Adam(0.0003), model)
+opt_state = Flux.setup(Flux.AdamW(0.0003), model)
 
 EPOCHS = 30
 train_losses = []
@@ -337,11 +332,14 @@ using CairoMakie
 
 i = 0
 preds = []
-for (u, pts, s) in train_loader
-	push!(preds, (pts, model(u, pts), s))
-
-	i += 1
-	i >= 16 && break
+t = 10
+for i in 1:16
+	x = x_train[:, i]
+	y = zeros(M)
+	for pt in 1:M
+		y[pt] = model(x, [pt, t])[1]
+	end
+	push!(preds, (y, y_train[:, t, i]))
 end
 
 begin
@@ -351,8 +349,8 @@ begin
 	for i in 1:4, j in 1:4
 		idx = i + (j - 1) * 4
 		ax = axs[i, j]
-		l1 = lines!(ax, vec(preds[idx][1]), vec(preds[idx][2]))
-		l2 = lines!(ax, vec(preds[idx][1]), vec(preds[idx][3]))
+		l1 = lines!(ax, vec(preds[idx][1]))
+		l2 = lines!(ax, vec(preds[idx][2]))
 
 		i == 4 && (ax.xlabel = "x")
 		j == 1 && (ax.ylabel = "u(x)")
