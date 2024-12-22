@@ -1,3 +1,5 @@
+#!/usr/bin/env -S julia --project=examples
+
 using DeepONet
 using Flux
 using NPZ
