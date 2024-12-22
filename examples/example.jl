@@ -4,10 +4,6 @@ using NumericalIntegration
 using Flux
 using Random
 using ProgressMeter
-# using Statistics
-# using LinearAlgebra
-# using ArgCheck
-# using ConcreteStructs
 
 
 
@@ -18,41 +14,39 @@ using ProgressMeter
 
 
 
-```
-ParallelDense
-```
 
-struct ParallelDense
-	W::AbstractMatrix
-	b::AbstractVector
-	act::Array{Function}
+
+
+
+
+
+
+# model.jl
+
+struct ParallelDense{T, F}
+	W::Matrix{T}
+	b::Vector{T}
+	act::Vector{F}
 end
 
-function ParallelDense(in_dim::Int, out_dim::Int, act::Array{<:Function})
+function ParallelDense(in_dim::Int, out_dim::Int, act::Vector{<:Function})
 	W = Flux.glorot_normal(out_dim, in_dim)
 	b = Flux.glorot_normal(out_dim)
-	return ParallelDense(W, b, act)
+	return ParallelDense{Float32, Function}(W, b, act)
 end
 
 function (dense::ParallelDense)(x)
 	pre = dense.W * x .+ dense.b
-	act = [act.(pre) for act in dense.act]
+	act = [f.(pre) for f in dense.act]
 	return cat(act..., dims = 1)
 end
 
-
-```
-OperatorNet
-```
 
 struct OperatorNet
 	layers::Chain
 end
 
-function OperatorNet(
-	in_dim::Int, out_dim::Int,
-	act::Array{<:Function}, sizes::Array{Int},
-)
+function OperatorNet(in_dim::Int, out_dim::Int, act::Vector{<:Function}, sizes::Vector{Int})
 	layers = []
 	from = in_dim
 	for to in sizes
@@ -68,30 +62,26 @@ function (opnet::OperatorNet)(x)
 end
 
 
-```
-DeepONet
-```
-
 struct DeepONet
 	branch::OperatorNet
 	trunk::OperatorNet
-	fuser::OperatorNet
+	project::OperatorNet
 end
 
 function DeepONet(
 	branch_dim::Int, trunk_dim::Int, output_dim::Int, act::Array{<:Function};
-	branch_sizes::Array{Int}, trunk_sizes::Array{Int}, output_sizes::Array{Int},
+	branch_sizes::Vector{Int}, trunk_sizes::Vector{Int}, output_sizes::Vector{Int},
 )
 	branch = OperatorNet(branch_dim, output_dim, act, branch_sizes)
 	trunk = OperatorNet(trunk_dim, output_dim, act, trunk_sizes)
-	fuser = OperatorNet(output_dim, 1, [identity], output_sizes)
-	return DeepONet(branch, trunk, fuser)
+	project = OperatorNet(output_dim, 1, [identity], output_sizes)
+	return DeepONet(branch, trunk, project)
 end
 
 function (model::DeepONet)(u, x)
 	branch = model.branch(u)
 	trunk = model.trunk(x)
-	output = model.fuser(branch .* trunk)
+	output = model.project(branch .* trunk)
 	return output
 end
 
@@ -103,12 +93,21 @@ end
 
 
 
-```
-RandomField
-```
+
+
+
+
+
+
+
+
+
+
+# random_field.jl
 
 struct RandomFieldGenerator
-	mean::AbstractVector
+	size::Int
+	mean::Vector
 	cov::AbstractCovarianceFunction
 	generator::GaussianRandomFieldGenerator
 	grf::GaussianRandomField
@@ -116,17 +115,96 @@ end
 
 function RandomFieldGenerator(
 	points::AbstractVector, dim::Int, size::Int;
-	μ::Float64, σ::Float64, λ::Float64,
+	mean::Real, std::Real, param::Real,
 )
-	model = Gaussian(λ, σ = σ)
-	mean = fill(μ, (size))
+	model = Gaussian(param, σ = std)
+	means = fill(mean, size)
 	covf = CovarianceFunction(dim, model)
 	generator = CirculantEmbedding()
-	grf = GaussianRandomField(mean, covf, generator, points)
-	return RandomFieldGenerator(mean, covf, generator, grf)
+	grf = GaussianRandomField(means, covf, generator, points)
+	return RandomFieldGenerator(length(points), means, covf, generator, grf)
 end
 
-(generator::RandomFieldGenerator)() = sample(generator.grf)
+function (generator::RandomFieldGenerator)()
+	sample(generator.grf)
+end
+function (generator::RandomFieldGenerator)(n::Int)
+	fields = zeros(Float32, (generator.size, n))
+	for i in 1:n
+		fields[:, i] = generator()
+	end
+	return fields
+end
+
+function generate_random_fields(
+	points::AbstractVector, dim::Int, size::Int;
+	means::Vector, stds::Vector, params::Vector,
+	K::Int,
+)
+	generators = [RandomFieldGenerator(points, dim, size; mean = m, std = s, param = p)
+				  for p in params, s in stds, m in means]
+	gsize = length(generators)
+	total = gsize * K
+	out = zeros(Float32, (size, total))
+	for g in 1:gsize
+		gi = (g - 1) * K
+		a, b = gi + 1, gi + K
+		out[:, a:b] = generators[g](K)
+	end
+	return out
+end
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# train.jl
+
+function evaluate(model::DeepONet, loader::Flux.DataLoader; loss_fn = Flux.Losses.mse)
+	return sum(loss_fn(model(u, x), s) for (u, x, s) in loader)
+end
+
+function train!(
+	model::DeepONet,
+	train_loader::Flux.DataLoader,
+	test_loader::Flux.DataLoader;
+	epochs = 20, loss_fn = Flux.Losses.mse,
+)
+	train_losses = zeros(Float32, epochs)
+	test_losses = zeros(Float32, epochs)
+	@showprogress for e in 1:epochs
+		for (u, pts, s) in train_loader
+			loss, grads = Flux.withgradient(model) do m
+				loss_fn(m(u, pts), s)
+			end
+			Flux.update!(opt_state, model, grads[1])
+			train_losses[e] += loss
+		end
+		test_losses[e] = evaluate(model, test_loader, loss_fn = loss_fn)
+	end
+	return train_losses, test_losses
+end
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -136,33 +214,21 @@ end
 # integrals
 
 EPOCHS = 30
-M = 100
-K = 50
-D = 1
+M, K, D = 100, 60, 1
 A, B = 0, 1
 
-μ = 0.0
-λs = range(0.1, stop = 0.5, length = 10)
-σs = range(1.0, stop = 10, length = 5)
-
 points = range(A, stop = B, length = M)
-generators = [
-	RandomFieldGenerator(points, D, M; μ = 0.0, σ = σ, λ = λ)
-	for λ in λs, σ in σs
-]
+means = [0]
+params = collect(range(0.1, stop = 0.3, length = 5))
+stds = collect(range(1, stop = 5, length = 3))
 
-G = length(generators)
-N = G * K
-U = zeros(Float32, (M, N))
-for i in 1:K, j in 1:G
-	id = (i - 1) * G + j
-	U[:, id] = generators[j]()
-end
+U = generate_random_fields(points, D, M; means = means, stds = stds, params = params, K = K)
+S = cumul_integrate(points, U', dims = 1)
+N = size(U, 2)
+
 show = 30
 plot(points, U[:, 1:show], label = "", lw = 2)
 heatmap(U[:, 1:show]')
-
-S = cumul_integrate(points, U', dims = 1)
 heatmap(S[:, 1:show]')
 
 i = 3
@@ -196,10 +262,8 @@ x_test = xs[:, test_view]
 S_test = Ss[:, test_view]
 
 BATCH_SIZE = 1024
-train_loader = Flux.DataLoader((U_train, x_train, S_train), batchsize = BATCH_SIZE, shuffle = true);
-test_loader = Flux.DataLoader((U_test, x_test, S_test), batchsize = BATCH_SIZE, shuffle = true);
-
-
+train_loader = Flux.DataLoader((U_train, x_train, S_train), batchsize = BATCH_SIZE);
+test_loader = Flux.DataLoader((U_test, x_test, S_test), batchsize = BATCH_SIZE);
 
 model = DeepONet(M, 1, 32, [gelu, tanh],
 	branch_sizes = [32, 32],
@@ -207,49 +271,13 @@ model = DeepONet(M, 1, 32, [gelu, tanh],
 	output_sizes = [4],
 )
 opt_state = Flux.setup(Flux.Adam(0.0003), model)
-
-function evaluate(model, loader)
-	loss = 0
-	for (u, pts, s) in loader
-		s_hat = model(u, pts)
-		loss += Flux.Losses.mse(s_hat, s)
-	end
-	return loss
-end
-
-train_losses = []
-test_losses = []
-@showprogress for epoch in 1:EPOCHS
-	test_loss = evaluate(model, test_loader)
-	train_loss = 0
-	for (u, pts, s) in train_loader
-		loss, grads = Flux.withgradient(model) do m
-			s_hat = m(u, pts)
-			Flux.Losses.mse(s_hat, s)
-		end
-		Flux.update!(opt_state, model, grads[1])
-		train_loss += loss
-	end
-	push!(train_losses, train_loss / BATCH_SIZE)
-	push!(test_losses, test_loss / BATCH_SIZE)
-end
+train_losses, test_losses = train!(model, train_loader, test_loader; epochs = EPOCHS)
 
 plot(train_losses; yaxis = "loss", label = "train")
 plot!(test_losses; yaxis = "loss", label = "test")
 
-# f(points) = sin(-exp(-points + 2)) * exp(-points + 2)
-# F(points) = -cos(-exp(-points + 2)) - -cos(-exp(2))
-# f(x) = -cos(3 * x) * 3
-# F(x) = -sin(3 * x)
-# a = 17
-# f(x) = cos(a * x) * a
-# F(x) = sin(a * x)
-# fx = f.(points)
-# Fx = F.(points)
-
 fx = U[:, 293]
 Fx = S[:, 293]
-
 Gx = zeros(Float32, (M))
 u_ = zeros(Float32, ((M, M)))
 x_ = zeros(Float32, ((1, M)))

@@ -1,5 +1,4 @@
 [deps]
-CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
 Flux = "587475ba-b771-5e3f-ad9e-33799f191a9c"
 GaussianRandomFields = "e4b2fa32-6e09-5554-b718-106ed5adafe9"
 NPZ = "15e1cf62-19b3-5cfa-8e77-841668bca605"
