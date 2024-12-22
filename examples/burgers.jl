@@ -90,6 +90,8 @@ Output_sizes: $(output_sizes)
 
 opt_state = Flux.setup(Flux.AdamW(0.0003), model)
 train_losses, test_losses = train!(model, opt_state, train_loader, test_loader)
+train_losses ./= train_bs
+test_losses ./= test_bs
 
 @info "Training complete"
 
