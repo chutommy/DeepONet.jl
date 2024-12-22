@@ -1,35 +1,61 @@
-struct ParallelDense
-	W::AbstractMatrix
-	b::AbstractVector
-	act::Tuple{Vararg{Function}}
+struct ParallelDense{T, F}
+	W::Matrix{T}
+	b::Vector{T}
+	act::Vector{F}
 end
 
-function (d::ParallelDense)(x)
-	preactivation = d.W * x .+ d.b
-	activation = [act(preactivation) for act in d.act]
-	return cat(activation..., dims = 1)
+function ParallelDense(in_dim::Int, out_dim::Int, act::Vector{<:Function})
+	W = Flux.glorot_normal(out_dim, in_dim)
+	b = Flux.glorot_normal(out_dim)
+	return ParallelDense{Float32, Function}(W, b, act)
 end
 
-function ParallelDense(in::Int, out::Int)
-	ParallelDense(glorot_normal(out, in), zeros(Float32, out))
+function (dense::ParallelDense)(x)
+	pre = dense.W * x .+ dense.b
+	act = [f.(pre) for f in dense.act]
+	return cat(act..., dims = 1)
 end
 
-model = let neurons = 40, in1 = M, in2 = 1, output_neurons = 20
-	branch1 = Layer(in1, neurons)
-	branch2 = Layer(neurons, neurons)
-	branch3 = Layer(neurons, output_neurons)
 
-	trunk1 = Layer(in2, neurons)
-	trunk2 = Layer(neurons, neurons)
-	trunk3 = Layer(neurons, neurons)
-	trunk4 = Layer(neurons, output_neurons)
+struct OperatorNet
+	layers::Chain
+end
 
-	adjoint = Layer(output_neurons, 1)
-
-	function fwd(u, x)
-		branch = branch3(gelu(branch2(gelu(branch1(u)))))
-		trunk = trunk4(gelu(trunk3(gelu(trunk2(gelu(trunk1(x)))))))
-		output = adjoint(branch .* trunk)
-		return output
+function OperatorNet(in_dim::Int, out_dim::Int, act::Vector{<:Function}, sizes::Vector{Int})
+	layers = []
+	from = in_dim
+	for to in sizes
+		push!(layers, ParallelDense(from, to, act))
+		from = to * length(act)
 	end
+	push!(layers, Dense(from => out_dim, identity))
+	return OperatorNet(Chain(layers))
+end
+
+function (opnet::OperatorNet)(x)
+	return opnet.layers(x)
+end
+
+
+struct Model
+	branch::OperatorNet
+	trunk::OperatorNet
+	project::OperatorNet
+end
+
+function Model(
+	branch_dim::Int, trunk_dim::Int, output_dim::Int, act::Array{<:Function};
+	branch_sizes::Vector{Int}, trunk_sizes::Vector{Int}, output_sizes::Vector{Int},
+)
+	branch = OperatorNet(branch_dim, output_dim, act, branch_sizes)
+	trunk = OperatorNet(trunk_dim, output_dim, act, trunk_sizes)
+	project = OperatorNet(output_dim, 1, [identity], output_sizes)
+	return Model(branch, trunk, project)
+end
+
+function (model::Model)(u, x)
+	branch = model.branch(u)
+	trunk = model.trunk(x)
+	output = model.project(branch .* trunk)
+	return output
 end
