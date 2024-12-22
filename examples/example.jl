@@ -167,7 +167,18 @@ end
 
 
 
-# train.jl
+# utils.jl
+
+function uxs_split(U::Matrix, X::Matrix, S::Matrix; split::Real, toshuffle::Bool = false)
+	N = size(U, 2)
+	indices = toshuffle ? shuffle(1:N) : 1:N
+	n_train = Int(floor(split * N))
+	train_view = indices[1:n_train]
+	test_view = indices[n_train+1:end]
+	train_uxs = U[:, train_view], X[:, train_view], S[:, train_view]
+	test_uxs = U[:, test_view], X[:, test_view], S[:, test_view]
+	return train_uxs, test_uxs
+end
 
 function evaluate(model::DeepONet, loader::Flux.DataLoader; loss_fn = Flux.Losses.mse)
 	return sum(loss_fn(model(u, x), s) for (u, x, s) in loader)
@@ -177,14 +188,15 @@ function train!(
 	model::DeepONet,
 	train_loader::Flux.DataLoader,
 	test_loader::Flux.DataLoader;
-	epochs = 20, loss_fn = Flux.Losses.mse,
+	epochs::Int = 30,
+	loss_fn::Function = Flux.Losses.mse,
 )
 	train_losses = zeros(Float32, epochs)
 	test_losses = zeros(Float32, epochs)
 	@showprogress for e in 1:epochs
-		for (u, pts, s) in train_loader
+		for (u, x, s) in train_loader
 			loss, grads = Flux.withgradient(model) do m
-				loss_fn(m(u, pts), s)
+				loss_fn(m(u, x), s)
 			end
 			Flux.update!(opt_state, model, grads[1])
 			train_losses[e] += loss
@@ -213,7 +225,6 @@ end
 
 # integrals
 
-EPOCHS = 30
 M, K, D = 100, 60, 1
 A, B = 0, 1
 
@@ -247,23 +258,13 @@ for i in 1:N
 	Ss[:, a:b] = S[:, i]
 end
 
-test_train_split = 0.8
-n_train = Int(floor(test_train_split * M * N))
-shuffle_view = shuffle(1:M*N)
-train_view = shuffle_view[1:n_train]
-test_view = shuffle_view[n_train+1:end]
-
-U_train = Us[:, train_view]
-x_train = xs[:, train_view]
-S_train = Ss[:, train_view]
-
-U_test = Us[:, test_view]
-x_test = xs[:, test_view]
-S_test = Ss[:, test_view]
+train_uxs, test_uxs = uxs_split(Us, xs, Ss; split = 0.75, toshuffle = true)
+U_train, X_train, S_train = train_uxs
+U_test, X_test, S_test = test_uxs
 
 BATCH_SIZE = 1024
-train_loader = Flux.DataLoader((U_train, x_train, S_train), batchsize = BATCH_SIZE);
-test_loader = Flux.DataLoader((U_test, x_test, S_test), batchsize = BATCH_SIZE);
+train_loader = Flux.DataLoader((U_train, X_train, S_train), batchsize = BATCH_SIZE);
+test_loader = Flux.DataLoader((U_test, X_test, S_test), batchsize = BATCH_SIZE);
 
 model = DeepONet(M, 1, 32, [gelu, tanh],
 	branch_sizes = [32, 32],
@@ -271,10 +272,9 @@ model = DeepONet(M, 1, 32, [gelu, tanh],
 	output_sizes = [4],
 )
 opt_state = Flux.setup(Flux.Adam(0.0003), model)
-train_losses, test_losses = train!(model, train_loader, test_loader; epochs = EPOCHS)
-
-plot(train_losses; yaxis = "loss", label = "train")
-plot!(test_losses; yaxis = "loss", label = "test")
+train_losses, test_losses = train!(model, train_loader, test_loader)
+plot(train_losses; yaxis = "loss", label = "train", lw = 2)
+plot!(test_losses; yaxis = "loss", label = "test", lw = 2)
 
 fx = U[:, 293]
 Fx = S[:, 293]
@@ -294,105 +294,110 @@ plot!(points, Gx', label = "G", lw = 2)
 
 
 
+
+
+
+
+
+
+
+
+
 # burger's equation
 using NPZ
 
 burgers = npzread("data/npz/burgers_equation.npz")
 
-x_train = burgers["x_train"]
-y_train = burgers["y_train"]
+X_train, y_train = burgers["x_train"], burgers["y_train"]
+X_test, y_test = burgers["x_test"], burgers["y_test"]
 
-x_train = PermutedDimsArray(x_train, (2, 1))
+X_train = PermutedDimsArray(X_train, (2, 1))
 y_train = PermutedDimsArray(y_train, (3, 2, 1))
-M, T, N = size(y_train)
+X_test = PermutedDimsArray(X_test, (2, 1))
+y_test = PermutedDimsArray(y_test, (3, 2, 1))
 
-plot(y_train[:, :, 1])
+X = cat(X_train, X_test, dims = 2)
+y = cat(y_train, y_test, dims = 3)
+M, T, N = size(y)
 
-X = zeros(Float32, (M, N * T * M))
-Y = zeros(Float32, (1, N * T * M))
-g = zeros(Float32, (2, N * T * M))
-
+Us = zeros(Float32, (M, N * T * M))
+Xs = zeros(Float32, (2, N * T * M))
+Ss = zeros(Float32, (1, N * T * M))
 for n in 1:N, t in 1:T
 	ni = (n - 1) * M * T
 	ti = (t - 1) * M
 	a = ni + ti + 1
 	b = ni + ti + M
 
-	X[:, a:b] .= x_train[:, n]
-	Y[:, a:b] = y_train[:, t, n]
-
-	g[1, a:b] .= collect(1:M)
-	g[2, a:b] .= t
+	Us[:, a:b] .= X[:, n]
+	Ss[:, a:b] = y[:, t, n]
+	Xs[1, a:b] .= collect(1:M)
+	Xs[2, a:b] .= t
 end
 
+plot(y_train[:, :, 1])
+
+uxs_train, uxs_test = uxs_split(Us, Xs, Ss; split = 0.5, toshuffle = true)
+U_train, x_train, S_train = uxs_train
+U_test, x_test, S_test = uxs_test
 
 BATCH_SIZE = 1024
-train_loader = Flux.DataLoader((X, g, Y), batchsize = BATCH_SIZE, shuffle = false);
+train_loader = Flux.DataLoader((U_train, x_train, S_train), batchsize = BATCH_SIZE);
+test_loader = Flux.DataLoader((U_test, x_test, S_test), batchsize = BATCH_SIZE);
 
-
-model = DeepONet(size(x_data, 1), 2, 32, [gelu, tanh],
-	branch_sizes = [ntuple(Returns(32), 5)...],
-	trunk_sizes = [ntuple(Returns(32), 5)...],
+model = DeepONet(size(U_train, 1), 2, 32, [gelu, tanh],
+	branch_sizes = [32 for _ in 1:5],
+	trunk_sizes = [32 for _ in 1:5],
 	output_sizes = [1],
 )
 opt_state = Flux.setup(Flux.AdamW(0.0003), model)
-
-EPOCHS = 30
-train_losses = []
-@showprogress for epoch in 1:EPOCHS
-	train_loss = 0
-	for (u, pts, s) in train_loader
-		loss, grads = Flux.withgradient(model) do m
-			s_hat = m(u, pts)
-			Flux.Losses.mse(s_hat, s)
-		end
-		Flux.update!(opt_state, model, grads[1])
-		train_loss += loss
-	end
-	push!(train_losses, train_loss / BATCH_SIZE)
-end
-
-
-plot(train_losses; yaxis = "loss", label = "train")
+train_losses, test_losses = train!(model, train_loader, test_loader)
+plot(train_losses; yaxis = "loss", label = "train", lw = 2)
+plot!(test_losses; yaxis = "loss", label = "test", lw = 2)
 
 
 using CairoMakie
 
 i = 0
 preds = []
-t = 10
+t = 13
 for i in 1:16
-	x = x_train[:, i]
+	x = X_test[:, i]
 	y = zeros(M)
 	for pt in 1:M
 		y[pt] = model(x, [pt, t])[1]
 	end
-	push!(preds, (y, y_train[:, t, i]))
+	push!(preds, (y, y_test[:, t, i]))
 end
 
 begin
 	fig = Figure(; size = (1024, 1024))
-
 	axs = [Axis(fig[i, j]) for i in 1:4, j in 1:4]
 	for i in 1:4, j in 1:4
 		idx = i + (j - 1) * 4
 		ax = axs[i, j]
 		l1 = lines!(ax, vec(preds[idx][1]))
 		l2 = lines!(ax, vec(preds[idx][2]))
-
 		i == 4 && (ax.xlabel = "x")
 		j == 1 && (ax.ylabel = "u(x)")
-
 		if i == 1 && j == 1
 			axislegend(ax, [l1, l2], ["Predictions", "Ground Truth"])
 		end
 	end
 	linkaxes!(axs...)
-
 	fig[0, :] = Label(fig, "Burgers Equation using DeepONet"; tellwidth = false, font = :bold)
-
 	fig
 end
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -405,16 +410,16 @@ using NPZ
 
 darcy = npzread("data/npz/darcys_flow.npz")
 
-x_train = darcy["x_train"]
+X_train = darcy["X_train"]
 y_train = darcy["y_train"]
 
-x_train = PermutedDimsArray(x_train, (2, 3, 1))
+X_train = PermutedDimsArray(X_train, (2, 3, 1))
 y_train = PermutedDimsArray(y_train, (2, 3, 1))
 a, b, N = size(y_train)
 a != b && error("a != b")
 M = a
 
-heatmap(x_train[:, :, 1])
+heatmap(X_train[:, :, 1])
 heatmap(y_train[:, :, 1])
 
 X = zeros(Float32, (M * M, N * M * M))
@@ -428,7 +433,7 @@ for n in 1:N
 	a = ni + 1
 	b = ni + M * M
 
-	X[:, a:b] .= x_train[:, :, n][:]
+	X[:, a:b] .= X_train[:, :, n][:]
 	Y[:, a:b] = y_train[:, :, n][:]
 
 	g[1, a:b] = matrix_embd[:]
@@ -445,7 +450,6 @@ model = DeepONet(M * M, 2, 32, [gelu, tanh],
 )
 opt_state = Flux.setup(Flux.AdamW(0.0003), model)
 
-EPOCHS = 30
 train_losses = []
 @showprogress for epoch in 1:EPOCHS
 	train_loss = 0
@@ -466,7 +470,7 @@ plot(train_losses; yaxis = "loss", label = "train")
 i = 0
 preds = []
 for i in 1:4
-	x = x_train[:, :, i]
+	x = X_train[:, :, i]
 	y = zeros(M, M)
 	for i in 1:M, j in 1:M
 		y[i, j] = model(x[:], [i, j])[1]
