@@ -372,3 +372,81 @@ end
 
 
 # darcy's flow
+
+using NPZ
+
+darcy = npzread("data/npz/darcys_flow.npz")
+
+x_train = darcy["x_train"]
+y_train = darcy["y_train"]
+
+x_train = PermutedDimsArray(x_train, (2, 3, 1))
+y_train = PermutedDimsArray(y_train, (2, 3, 1))
+a, b, N = size(y_train)
+a != b && error("a != b")
+M = a
+
+heatmap(x_train[:, :, 1])
+heatmap(y_train[:, :, 1])
+
+X = zeros(Float32, (M * M, N * M * M))
+Y = zeros(Float32, (1, N * M * M))
+g = zeros(Float32, (2, N * M * M))
+
+matrix_embd = [i for i in 1:M, j in 1:M]
+
+for n in 1:N
+	ni = (n - 1) * M * M
+	a = ni + 1
+	b = ni + M * M
+
+	X[:, a:b] .= x_train[:, :, n][:]
+	Y[:, a:b] = y_train[:, :, n][:]
+
+	g[1, a:b] = matrix_embd[:]
+	g[2, a:b] = matrix_embd'[:]
+end
+
+BATCH_SIZE = 1024
+train_loader = Flux.DataLoader((X, g, Y), batchsize = BATCH_SIZE, shuffle = false);
+
+model = DeepONet(M * M, 2, 32, [gelu, tanh],
+	branch_sizes = [ntuple(Returns(32), 5)...],
+	trunk_sizes = [ntuple(Returns(32), 5)...],
+	output_sizes = [1],
+)
+opt_state = Flux.setup(Flux.AdamW(0.0003), model)
+
+EPOCHS = 30
+train_losses = []
+@showprogress for epoch in 1:EPOCHS
+	train_loss = 0
+	for (u, pts, s) in train_loader
+		loss, grads = Flux.withgradient(model) do m
+			s_hat = m(u, pts)
+			Flux.Losses.mse(s_hat, s)
+		end
+		Flux.update!(opt_state, model, grads[1])
+		train_loss += loss
+	end
+	push!(train_losses, train_loss / BATCH_SIZE)
+end
+
+
+plot(train_losses; yaxis = "loss", label = "train")
+
+i = 0
+preds = []
+for i in 1:4
+	x = x_train[:, :, i]
+	y = zeros(M, M)
+	for i in 1:M, j in 1:M
+		y[i, j] = model(x[:], [i, j])[1]
+	end
+	push!(preds, (x, y, y_train[:, :, i]))
+end
+
+i = 3
+heatmap(preds[i][1])
+heatmap(preds[i][2])
+heatmap(preds[i][3])
