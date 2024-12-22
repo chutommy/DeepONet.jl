@@ -47,7 +47,7 @@ BATCH_SIZE = 256
 train_loader = Flux.DataLoader((U_train, X_train, S_train), batchsize = BATCH_SIZE);
 test_loader = Flux.DataLoader((U_test, X_test, S_test), batchsize = BATCH_SIZE);
 
-model = Model(M, 1, 20, [gelu, tanh],
+model = DeepONetModel(M, 1, 20, [gelu, tanh],
 	branch_sizes = [40],
 	trunk_sizes = [40, 40],
 	output_sizes = [4],

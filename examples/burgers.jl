@@ -33,7 +33,7 @@ for n in 1:N, t in 1:T
 	Xs[2, a:b] .= t
 end
 
-plot(y_train[:, :, 1])
+Plots.plot(y_train[:, :, 1])
 
 uxs_train, uxs_test = uxs_split(Us, Xs, Ss; split = 0.5, toshuffle = true)
 U_train, x_train, S_train = uxs_train
@@ -43,7 +43,7 @@ BATCH_SIZE = 256
 train_loader = Flux.DataLoader((U_train, x_train, S_train), batchsize = BATCH_SIZE);
 test_loader = Flux.DataLoader((U_test, x_test, S_test), batchsize = BATCH_SIZE);
 
-model = Model(size(U_train, 1), 2, 20, [gelu, tanh],
+model = DeepONetModel(size(U_train, 1), 2, 20, [gelu, tanh],
 	branch_sizes = [30, 30],
 	trunk_sizes = [30, 30],
 	output_sizes = [1],
@@ -53,13 +53,12 @@ train_losses, test_losses = train!(model, opt_state, train_loader, test_loader)
 Plots.plot(train_losses; yaxis = "loss", label = "train", lw = 2)
 Plots.plot!(test_losses; yaxis = "loss", label = "test", lw = 2)
 
-
 i = 0
 preds = []
 t = 13
 for i in 1:16
-	x = X_test[:, i]
-	y = zeros(M)
+	x = Float32.(X_test[:, i])
+	y = Float32.(zeros(M))
 	for pt in 1:M
 		y[pt] = model(x, [pt, t])[1]
 	end

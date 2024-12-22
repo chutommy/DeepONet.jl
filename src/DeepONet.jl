@@ -1,10 +1,8 @@
 module DeepONet
 
-export Model
+export DeepONetModel
 export generate_random_fields
-export uxs_split
-export evaluate
-export train!
+export uxs_split, evaluate, train!
 
 using Flux
 using GaussianRandomFields
