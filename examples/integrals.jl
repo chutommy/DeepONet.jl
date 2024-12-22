@@ -1,4 +1,3 @@
-using Revise
 using DeepONet
 using Flux
 using NumericalIntegration

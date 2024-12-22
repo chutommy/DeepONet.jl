@@ -1,4 +1,3 @@
-using CairoMakie
 using DeepONet
 using Flux
 using NPZ
@@ -6,21 +5,30 @@ using Plots
 
 burgers = npzread("examples/data/npz/burgers_equation.npz")
 
-X_train, y_train = burgers["x_train"], burgers["y_train"]
-X_test, y_test = burgers["x_test"], burgers["y_test"]
+# Data preparation
 
-X_train = PermutedDimsArray(X_train, (2, 1))
-y_train = PermutedDimsArray(y_train, (3, 2, 1))
-X_test = PermutedDimsArray(X_test, (2, 1))
-y_test = PermutedDimsArray(y_test, (3, 2, 1))
+X_train = PermutedDimsArray(burgers["x_train"], (2, 1))
+y_train = PermutedDimsArray(burgers["y_train"], (3, 2, 1))
+X_test = PermutedDimsArray(burgers["x_test"], (2, 1))
+y_test = PermutedDimsArray(burgers["y_test"], (3, 2, 1))
+
+@info """Data shapes
+X_train $(size(X_train))
+y_train $(size(y_train))
+X_test  $(size(X_test))
+y_test  $(size(y_test))
+"""
 
 X = cat(X_train, X_test, dims = 2)
 y = cat(y_train, y_test, dims = 3)
 M, T, N = size(y)
 
+@info "M=$(M), T=$(T), N=$(N)"
+
 Us = zeros(Float32, (M, N * T * M))
 Xs = zeros(Float32, (2, N * T * M))
 Ss = zeros(Float32, (1, N * T * M))
+
 for n in 1:N, t in 1:T
 	ni = (n - 1) * M * T
 	ti = (t - 1) * M
@@ -28,58 +36,125 @@ for n in 1:N, t in 1:T
 	b = ni + ti + M
 
 	Us[:, a:b] .= X[:, n]
-	Ss[:, a:b] = y[:, t, n]
 	Xs[1, a:b] .= collect(1:M)
 	Xs[2, a:b] .= t
+	Ss[:, a:b] = y[:, t, n]
 end
 
-Plots.plot(y_train[:, :, 1])
+# Data splitting
 
-uxs_train, uxs_test = uxs_split(Us, Xs, Ss; split = 0.5, toshuffle = true)
+uxs_train, uxs_test = uxs_split(Us, Xs, Ss; split = 0.6, toshuffle = true)
 U_train, x_train, S_train = uxs_train
 U_test, x_test, S_test = uxs_test
 
-BATCH_SIZE = 256
-train_loader = Flux.DataLoader((U_train, x_train, S_train), batchsize = BATCH_SIZE);
-test_loader = Flux.DataLoader((U_test, x_test, S_test), batchsize = BATCH_SIZE);
+@info """Dataset sizes
+Train: $(size(U_train, 2))
+Test:  $(size(U_test, 2))
+"""
 
-model = DeepONetModel(size(U_train, 1), 2, 20, [gelu, tanh],
-	branch_sizes = [30, 30],
-	trunk_sizes = [30, 30],
-	output_sizes = [1],
+train_bs = 256
+test_bs = 1024
+train_loader = Flux.DataLoader((U_train, x_train, S_train), batchsize = train_bs)
+test_loader = Flux.DataLoader((U_test, x_test, S_test), batchsize = test_bs)
+
+@info """
+Batch sizes
+Train: $(length(train_loader))
+Test:  $(length(test_loader))
+"""
+
+# Model training
+
+activations = [gelu, tanh]
+branch_sizes = [30, 30]
+trunk_sizes = [30, 30]
+output_sizes = [1]
+model = DeepONetModel(
+	M, 2, 20, activations;
+	branch_sizes = branch_sizes,
+	trunk_sizes = trunk_sizes,
+	output_sizes = output_sizes,
 )
+
+@info """
+Model summary
+Activations:  $(activations)
+Branch_sizes: $(branch_sizes)
+Trunk_sizes:  $(trunk_sizes)
+Output_sizes: $(output_sizes)
+"""
+
+@info "Training model"
+
 opt_state = Flux.setup(Flux.AdamW(0.0003), model)
 train_losses, test_losses = train!(model, opt_state, train_loader, test_loader)
-Plots.plot(train_losses; yaxis = "loss", label = "train", lw = 2)
-Plots.plot!(test_losses; yaxis = "loss", label = "test", lw = 2)
 
-i = 0
-preds = []
-t = 13
-for i in 1:16
-	x = Float32.(X_test[:, i])
-	y = Float32.(zeros(M))
-	for pt in 1:M
-		y[pt] = model(x, [pt, t])[1]
-	end
-	push!(preds, (y, y_test[:, t, i]))
-end
+@info "Training complete"
 
-begin
-	fig = Figure(; size = (1024, 1024))
-	axs = [Axis(fig[i, j]) for i in 1:4, j in 1:4]
-	for i in 1:4, j in 1:4
-		idx = i + (j - 1) * 4
-		ax = axs[i, j]
-		l1 = lines!(ax, vec(preds[idx][1]))
-		l2 = lines!(ax, vec(preds[idx][2]))
-		i == 4 && (ax.xlabel = "x")
-		j == 1 && (ax.ylabel = "u(x)")
-		if i == 1 && j == 1
-			axislegend(ax, [l1, l2], ["Predictions", "Ground Truth"])
+# Plot training and test losses
+
+p = plot(xtickfont = font(8), ytickfont = font(8), dpi = 300)
+plot!(p, train_losses, label = "Train Loss", lw = 2)
+plot!(p, test_losses, label = "Test Loss", lw = 2)
+savefig(p, "docs/assets/burgers_losses.png")
+
+@info "Loss plot saved"
+
+# Plot burgers
+
+C = 12
+y_hat = zeros(Float32, (M, T, C))
+anim = @animate for t in 1:T+3
+	(t > T) && (t = T)
+	p = plot(
+		legend = false,
+		layout = C, dpi = 300,
+		xtickfontcolor = :white,
+		ytickfontcolor = :white,
+		tickfontsize = 1,
+		titlefont = font(12),
+	)
+	for c in 1:C
+		plot!(p[c], X_test[:, c], color = :dimgrey, lw = 1)
+		if c == 1
+			plot!(p[c], y_test[:, t, c], color = :orangered, title = "t = $t", l2 = 1.2)
+		else
+			plot!(p[c], y_test[:, t, c], color = :orangered, lw = 1.2)
 		end
 	end
-	linkaxes!(axs...)
-	fig[0, :] = Label(fig, "Burgers Equation using DeepONet"; tellwidth = false, font = :bold)
-	fig
 end
+gif(anim, "docs/assets/burgers.gif", fps = 10)
+
+@info "Burgers plot saved"
+
+# Plot predictions
+
+C = 12
+y_hat = zeros(Float32, (M, T, C))
+for c in 1:C, t in 1:T, m in 1:M
+	x = Float32.(X_test[:, c])
+	y_hat[m, t, c] = model(x, [m, t])[1]
+end
+anim = @animate for t in 1:T+3
+	(t > T) && (t = T)
+	p = plot(
+		legend = false,
+		layout = C, dpi = 300,
+		xtickfontcolor = :white,
+		ytickfontcolor = :white,
+		tickfontsize = 1,
+		titlefont = font(12),
+	)
+	for c in 1:C
+		plot!(p[c], X_test[:, c] .* 1.2, lw = 0)
+		plot!(p[c], y_hat[:, t, c], color = :dimgrey, lw = 1.2, linestyle = :dot)
+		if c == 1
+			plot!(p[c], y_test[:, t, c], color = :orangered, lw = 1.2, title = "t = $t")
+		else
+			plot!(p[c], y_test[:, t, c], color = :orangered, lw = 1.2)
+		end
+	end
+end
+gif(anim, "docs/assets/burgers_predictions.gif", fps = 10)
+
+@info "Predictions plot saved"
