@@ -104,33 +104,6 @@ savefig(p, "docs/assets/burgers_losses.png")
 
 @info "Loss plot saved"
 
-# Plot burgers
-
-C = 12
-y_hat = zeros(Float32, (M, T, C))
-anim = @animate for t in 1:T+3
-	(t > T) && (t = T)
-	p = plot(
-		legend = false,
-		layout = C, dpi = 300,
-		xtickfontcolor = :white,
-		ytickfontcolor = :white,
-		tickfontsize = 1,
-		titlefont = font(12),
-	)
-	for c in 1:C
-		plot!(p[c], X_test[:, c], color = :dimgrey, lw = 1)
-		if c == 1
-			plot!(p[c], y_test[:, t, c], color = :orangered, title = "t = $t", l2 = 1.2)
-		else
-			plot!(p[c], y_test[:, t, c], color = :orangered, lw = 1.2)
-		end
-	end
-end
-gif(anim, "docs/assets/burgers.gif", fps = 10)
-
-@info "Burgers plot saved"
-
 # Plot predictions
 
 C = 12
@@ -143,20 +116,24 @@ anim = @animate for t in 1:T+3
 	(t > T) && (t = T)
 	p = plot(
 		legend = false,
+		legendfontsize = 10,
+		legs = :bottom,
+		foreground_color_legend = nothing,
 		layout = C, dpi = 300,
 		xtickfontcolor = :white,
 		ytickfontcolor = :white,
 		tickfontsize = 1,
-		titlefont = font(12),
+		titlefont = font(10),
 	)
-	for c in 1:C
-		plot!(p[c], X_test[:, c] .* 1.2, lw = 0)
-		plot!(p[c], y_hat[:, t, c], color = :dimgrey, lw = 1.2, linestyle = :dot)
-		if c == 1
-			plot!(p[c], y_test[:, t, c], color = :orangered, lw = 1.2, title = "t = $t")
-		else
-			plot!(p[c], y_test[:, t, c], color = :orangered, lw = 1.2)
-		end
+	plot!(p[1], annotation = (0.1, 0.15, "t = $(t)", :left))
+
+	plot!(p[1], zeros(0) .* 1.2, color = :dimgrey, lw = 2, linestyle = :dot, label = " Input", legend = true, axis = ([], false))
+	plot!(p[1], zeros(0), color = :dodgerblue2, lw = 2, label = " Ground Truth", legend = true, axis = ([], false))
+	plot!(p[1], zeros(0), color = :orangered, lw = 2, label = " Prediction", legend = true, axis = ([], false))
+	for c in 2:C
+		plot!(p[c], X_test[:, c] .* 1.2, color = :dimgrey, lw = 1, linestyle = :dot)
+		plot!(p[c], y_test[:, t, c], color = :dodgerblue2, lw = 1.2)
+		plot!(p[c], y_hat[:, t, c], color = :orangered, lw = 1.2)
 	end
 end
 gif(anim, "docs/assets/burgers_predictions.gif", fps = 10)
