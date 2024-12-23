@@ -57,8 +57,8 @@ Test:  $(size(U_test, 2))
 
 train_bs = 256
 test_bs = 1024
-train_loader = Flux.DataLoader((U_train, x_train, S_train), batchsize = train_bs);
-test_loader = Flux.DataLoader((U_test, x_test, S_test), batchsize = test_bs);
+train_loader = Flux.DataLoader((U_train, x_train, S_train), batchsize = train_bs)
+test_loader = Flux.DataLoader((U_test, x_test, S_test), batchsize = test_bs)
 
 @info """
 Batch sizes

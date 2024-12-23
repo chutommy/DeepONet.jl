@@ -27,12 +27,12 @@
 		]
 		sizes = [1, 10, 100]
 		@testset "$(p)" for p in params, s in sizes
-			model = deeponetmodel(p.uin, p.xin, p.pin, p.act;
+			model = DeepONetModel(p.uin, p.xin, p.pin, p.act;
 				branch_sizes = [3], trunk_sizes = [3], output_sizes = [1])
-			u = rand(float32, (p.uin, s))
-			x = rand(float32, (p.xin, s))
-			s = rand(float32, (1, s))
-			loader = flux.dataloader((u, x, s); batchsize = 5)
+			u = rand(Float32, (p.uin, s))
+			x = rand(Float32, (p.xin, s))
+			s = rand(Float32, (1, s))
+			loader = Flux.DataLoader((u, x, s), batchsize = 5)
 			loss = evaluate(model, loader; loss_fn = Flux.Losses.mse)
 			@test loss >= 0
 		end
@@ -46,8 +46,8 @@
 		X = rand(Float32, (p.xin, p.s))
 		S = rand(Float32, (1, p.s))
 
-		train_loader = Flux.DataLoader((U, X, S); batchsize = 5)
-		test_loader = Flux.DataLoader((U, X, S); batchsize = 5)
+		train_loader = Flux.DataLoader((U, X, S), batchsize = 5)
+		test_loader = Flux.DataLoader((U, X, S), batchsize = 5)
 		opt = Flux.setup(Flux.AdamW(0.001), model)
 		train_losses, test_losses = train!(model, opt, train_loader, test_loader; epochs = 3)
 
