@@ -26,6 +26,8 @@ y = cat(y_train, y_test, dims = 3)
 M, M2, N = size(X)
 @assert M == M2
 
+@info "M=$(M), N=$(N)"
+
 Us = zeros(Float32, (M * M, N * M * M))
 Xs = zeros(Float32, (2, N * M * M))
 Ss = zeros(Float32, (1, N * M * M))
@@ -105,15 +107,17 @@ savefig(p, "docs/assets/darcys_losses.png")
 
 # Plot darcys
 
-C = 12
+C = 16
 p = plot(
+	layout = C,
+	dpi = 300,
+	size = (850, 800),
+	axis = false,
 	legend = false,
-	layout = C, dpi = 300,
+	tickfontsize = 1,
+	guidefontsize = 12,
 	xtickfontcolor = :white,
 	ytickfontcolor = :white,
-	axis = false,
-	tickfontsize = 1,
-	titlefont = font(12),
 )
 
 for c in 1:4
@@ -123,9 +127,20 @@ for c in 1:4
 		y_hat[i, j] = model(x[:], [i, j])[1]
 	end
 
-	heatmap!(p, X_test[:, :, c], subplot = c)
+	if c == 1
+		heatmap!(p, X_test[:, :, c], subplot = c, ylabel = "Input", color = :amp)
+		heatmap!(p, y_test[:, :, c], subplot = c + 4, ylabel = "Ground Truth")
+		heatmap!(p, y_hat, subplot = c + 8, ylabel = "Prediction")
+		heatmap!(p, abs.(y_test[:, :, c] - y_hat), subplot = c + 12, ylabel = "Abs. Error",
+			clim = (0, maximum(abs.(y_test[:, :, c]))), color = :amp)
+		continue
+	end
+
+	heatmap!(p, X_test[:, :, c], subplot = c, color = :amp)
 	heatmap!(p, y_test[:, :, c], subplot = c + 4)
 	heatmap!(p, y_hat, subplot = c + 8)
+	heatmap!(p, abs.(y_test[:, :, c] - y_hat), subplot = c + 12,
+		clim = (0, maximum(abs.(y_test[:, :, c]))), color = :amp)
 end
 savefig(p, "docs/assets/darcys_predictions.png")
 
