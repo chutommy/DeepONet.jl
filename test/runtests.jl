@@ -6,4 +6,8 @@ using Test
 	@testset "Code quality (Aqua.jl)" begin
 		Aqua.test_all(DeepONet)
 	end
+
+	include("generator.jl")
+	include("model.jl")
+	include("utils.jl")
 end
