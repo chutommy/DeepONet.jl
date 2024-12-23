@@ -2,6 +2,7 @@ module DeepONet
 
 export DeepONetModel
 export ParallelDense
+export OperatorNet
 export RandomFieldGenerator
 export generate_random_fields
 export uxs_split, evaluate, train!
