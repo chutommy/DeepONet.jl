@@ -100,7 +100,7 @@ test_losses ./= test_bs
 p = plot(xtickfont = font(8), ytickfont = font(8), dpi = 300)
 plot!(p, train_losses, label = "Train Loss", lw = 2)
 plot!(p, test_losses, label = "Test Loss", lw = 2)
-savefig(p, "docs/assets/burgers_losses.png")
+savefig(p, "assets/burgers_losses.png")
 
 @info "Loss plot saved"
 
@@ -140,6 +140,6 @@ anim = @animate for t in 1:T+4
 		plot!(p[c], y_hat[:, t, c], color = :orangered, lw = 1.2)
 	end
 end
-gif(anim, "docs/assets/burgers_predictions.gif", fps = 10)
+gif(anim, "assets/burgers_predictions.gif", fps = 10)
 
 @info "Predictions plot saved"

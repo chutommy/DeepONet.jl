@@ -101,7 +101,7 @@ test_losses ./= test_bs
 p = plot(xtickfont = font(8), ytickfont = font(8), dpi = 300)
 plot!(p, train_losses, label = "Train Loss", lw = 2)
 plot!(p, test_losses, label = "Test Loss", lw = 2)
-savefig(p, "docs/assets/darcys_losses.png")
+savefig(p, "assets/darcys_losses.png")
 
 @info "Loss plot saved"
 
@@ -142,6 +142,6 @@ for c in 1:4
 	heatmap!(p, abs.(y_test[:, :, c] - y_hat), subplot = c + 12,
 		clim = (0, maximum(abs.(y_test[:, :, c]))), color = :amp)
 end
-savefig(p, "docs/assets/darcys_predictions.png")
+savefig(p, "assets/darcys_predictions.png")
 
 @info "Darcys predictions plot saved"

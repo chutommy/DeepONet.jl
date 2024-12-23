@@ -91,7 +91,7 @@ test_losses ./= test_bs
 p = plot(xtickfont = font(8), ytickfont = font(8), dpi = 300)
 plot!(p, train_losses, label = "Train Loss", lw = 2)
 plot!(p, test_losses, label = "Test Loss", lw = 2)
-savefig(p, "docs/assets/integrals_losses.png")
+savefig(p, "assets/integrals_losses.png")
 
 @info "Loss plot saved"
 
@@ -136,7 +136,7 @@ for c in 1:C
 	plot!(p[c], points, Fx)
 	plot!(p[c], points, Gx')
 end
-savefig(p, "docs/assets/integrals_predictions.png")
+savefig(p, "assets/integrals_predictions.png")
 
 @info "Integrals predictions plot saved"
 
@@ -157,6 +157,6 @@ p = plot(
 )
 heatmap!(p, X[:, 1:C]', subplot = 2)
 heatmap!(p, Y[:, 1:C]', subplot = 3)
-savefig(p, "docs/assets/integrals_fields.png")
+savefig(p, "assets/integrals_fields.png")
 
 @info "Fields plot saved"
