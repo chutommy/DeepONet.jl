@@ -112,20 +112,21 @@ for c in 1:C, t in 1:T, m in 1:M
 	x = Float32.(X_test[:, c])
 	y_hat[m, t, c] = model(x, [m, t])[1]
 end
-anim = @animate for t in 1:T+3
+anim = @animate for t in 1:T+4
 	(t > T) && (t = T)
 	p = plot(
+		layout = C,
+		dpi = 300,
+		size = (700, 400),
 		legend = false,
-		legendfontsize = 10,
 		legs = :bottom,
-		foreground_color_legend = nothing,
-		layout = C, dpi = 300,
+		legendfontsize = 10,
+		tickfontsize = 1,
 		xtickfontcolor = :white,
 		ytickfontcolor = :white,
-		tickfontsize = 1,
-		titlefont = font(10),
+		foreground_color_legend = nothing,
 	)
-	plot!(p[1], annotation = (0.1, 0.15, "t = $(t)", :left))
+	annotate!(p[1], 0.2, 0.15, text("t = $(t)", :black, :left, 12))
 
 	plot!(p[1], zeros(0) .* 1.2, color = :dimgrey, lw = 2, linestyle = :dot, label = " Input", legend = true, axis = ([], false))
 	plot!(p[1], zeros(0), color = :dodgerblue2, lw = 2, label = " Ground Truth", legend = true, axis = ([], false))
