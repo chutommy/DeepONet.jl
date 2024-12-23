@@ -1,7 +1,7 @@
 name = "DeepONet"
 uuid = "f5d89359-17ff-402f-9b78-4f106bdd986e"
 authors = ["Tommy Chu <chutommy@fit.cvut.cz>"]
-version = "0.1.0"
+version = "1.0.0"
 
 [deps]
 Flux = "587475ba-b771-5e3f-ad9e-33799f191a9c"
@@ -11,6 +11,7 @@ Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 Suppressor = "fd094767-a336-5f1f-9728-57cf17d0bbfb"
 
 [compat]
+julia = "1.11"
 Flux = "0.16.0"
 GaussianRandomFields = "2.2.5"
 ProgressMeter = "1.10.2"
