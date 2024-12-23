@@ -1,4 +1,4 @@
-@testset "Random Field Generator" begin
+@testset "Random Field Generator" verbose = true begin
 	points, resolution = 1:100, 100
 	gparams = [
 		(mean = 0.0, std = 1.0, par = 0.1),
@@ -30,7 +30,7 @@
 		(means = [0, 1, 2], stds = [1, 3, 5], pars = [0.1, 0.3, 0.5], K = 10),
 		(means = [0, 1, 2], stds = [1, 3, 5], pars = [0.1, 0.3], K = 10),
 	]
-	@testset "Multiple Fields with Different Parameters" begin
+	@testset "Varying Parameters" begin
 		@testset "mean=$(p.means) std=$(p.stds) par=$(p.pars) K=$(p.K)" for p in gfparams
 			field = generate_random_fields(points, 1, resolution;
 				means = p.means, stds = p.stds, params = p.pars, K = p.K)

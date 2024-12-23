@@ -3,7 +3,7 @@ using Flux
 using DeepONet
 using Test
 
-@testset "DeepONet.jl" begin
+@testset "DeepONet.jl" verbose = true begin
 	include("aqua.jl")
 	include("generator.jl")
 	include("model.jl")
