@@ -19,7 +19,7 @@ spaces, making it essential for solving PDEs and other function-based tasks.
 
 ### Universal Approximation Theorem for Operator
 
-[<https://arxiv.org/pdf/1910.03193>]: ... $G$ is a nonlinear continuous
+<https://arxiv.org/pdf/1910.03193>: ... $G$ is a nonlinear continuous
 operator. Then for any $\epsilon>0$, there exist *parameters* such that the
 following equation holds for all $u$ and $y$:
 
