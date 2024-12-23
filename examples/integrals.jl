@@ -103,12 +103,11 @@ p = plot(
 	dpi = 300,
 	size = (800, 500),
 	legend = false,
-	legendfontsize = 10,
+	legendfontsize = 12,
 	tickfontsize = 1,
 	guidefontsize = 12,
 	xtickfontcolor = :white,
 	ytickfontcolor = :white,
-	linewidth = 2,
 	foreground_color_legend = nothing,
 )
 
@@ -125,16 +124,17 @@ for c in 1:C
 	Gx = model(u_, x_)
 
 	if c == 1
-		plot!(p[c], zeros(0), label = " Input", linestyle = :dash, axis = ([], false))
-		plot!(p[c], zeros(0), label = " Ground Truth", axis = ([], false))
-		plot!(p[c], zeros(0), label = " Prediction", legend = :inside, axis = ([], false))
+		plot!(p[c], zeros(0), linestyle = :dash, label = " Input", axis = ([], false))
+		plot!(p[c], zeros(0), color = :grays, label = " Ground Truth", axis = ([], false))
+		plot!(p[c], zeros(0), color = :orangered, label = " Prediction", axis = ([], false),
+			legend = :inside)
 		continue
 	end
 
 	r = maximum(abs.(Fx)) / maximum(abs.(fx))
-	plot!(p[c], points, fx .* r, lw = 1, linestyle = :dash)
-	plot!(p[c], points, Fx)
-	plot!(p[c], points, Gx')
+	plot!(p[c], points, fx .* r, lw = 1.2, linestyle = :dash)
+	plot!(p[c], color = :grays, points, Fx, lw = 1.5)
+	plot!(p[c], color = :orangered, points, Gx', lw = 1.5)
 end
 savefig(p, "assets/integrals_predictions.png")
 

@@ -1,27 +1,38 @@
-# Extended DeepONet Implementation in Julia
-
-## Overview
+# Extended DeepONet in Julia
 
 DeepONet is a neural network architecture designed for operator learning, which
 involves mapping functions to functions. This approach is particularly effective
 for problems in infinite-dimensional spaces, such as solving partial
 differential equations (PDEs) or modeling scientific simulations.
 
+![Operator Learning](assets/operator_learning.png)
+
 This implementation extends the standard DeepONet architecture by adding
 additional layers after combining the branch and trunk network outputs.
 
----
-
-## Key Concepts
-
-### Neural Operator Learning
+## Neural Operator Learning
 
 Operator learning uses machine learning to approximate mathematical operators.
 Unlike traditional machine learning methods that work with finite-dimensional
 data, operator learning addresses transformations in infinite-dimensional
 spaces, making it essential for solving PDEs and other function-based tasks.
 
-### DeepONet Architecture
+### Universal Approximation Theorem for Operator
+
+[<https://arxiv.org/pdf/1910.03193>]: ... $G$ is a nonlinear continuous
+operator. Then for any $\epsilon>0$, there exist *parameters* such that the
+following equation holds for all $u$ and $y$:
+
+```math
+\left|G(u)(y) - \sum_{k=1}^p
+\underbrace{\sum_{i=1}^n c_i^k \sigma\left(\sum_{j=1}^m \xi_{ij}^ku(x_j)+\theta_i^k\right)}_{branch}
+\underbrace{\sigma(w_k \cdot y+\zeta_k)}_{trunk}
+\right|<\epsilon
+```
+
+## DeepONet Architecture
+
+![DeepONet](assets/deeponet.png)
 
 DeepONet consists of:
 
@@ -30,8 +41,6 @@ DeepONet consists of:
 
 The outputs of these networks are combined to approximate the target operator.
 
----
-
 ## Installation
 
 To install the package:
@@ -39,8 +48,6 @@ To install the package:
 ```julia
 pkg> add https://github.com/B0B36JUL-FinalProjects-2024/Project_chutommy
 ```
-
----
 
 ## Usage
 
@@ -55,12 +62,10 @@ model = DeepONetModel( M, 2, 20, activations;
 )
 
 opt_state = Flux.setup(Flux.AdamW(0.0003), model)
-train_losses, test_losses = train!(model, opt_state, train_loader, test_loader)
+train!(model, opt_state, train_loader, test_loader)
 ```
 
 Refer to the provided examples for specific applications.
-
----
 
 ## Examples
 
@@ -75,6 +80,9 @@ F(x) = \int_0^1 f(x) \, dx
 The network learns to compute the integral of a given function \( f(x) \) over
 this interval. Predictions are compared with exact ground truth values.
 
+![Definite Integral](assets/integrals_predictions.png)
+Refer to the code [here](https://github.com/B0B36JUL-FinalProjects-2024/Project_chutommy/blob/main/examples/integrals.jl).
+
 ### Burger's Equation
 
 Approximate the solution to the 1D Burger’s equation:
@@ -86,6 +94,9 @@ Approximate the solution to the 1D Burger’s equation:
 
 DeepONet is trained on initial conditions to predict the solution over time.
 
+![Burger's Equation](assets/burgers_predictions.gif)
+Refer to the code [here](https://github.com/B0B36JUL-FinalProjects-2024/Project_chutommy/blob/main/examples/burgers.jl).
+
 ### Darcy's Flow
 
 Learn Darcy’s law for fluid flow in porous media:
@@ -96,3 +107,6 @@ Learn Darcy’s law for fluid flow in porous media:
 
 Given inputs like permeability ($\kappa$) and pressure gradient ($\nabla p$),
 the network predicts fluid velocity ($\mathbf{v}$).
+
+![Darcy's Law ](assets/darcys_predictions.png)
+Refer to the code [here](https://github.com/B0B36JUL-FinalProjects-2024/Project_chutommy/blob/main/examples/darcys.jl).
