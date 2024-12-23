@@ -128,9 +128,12 @@ anim = @animate for t in 1:T+4
 	)
 	annotate!(p[1], 0.2, 0.15, text("t = $(t)", :black, :left, 12))
 
-	plot!(p[1], zeros(0) .* 1.2, lw = 1.5, linestyle = :dash, label = " Input", legend = true, axis = ([], false))
-	plot!(p[1], zeros(0), color = :grays, lw = 1.5, label = " Ground Truth", legend = true, axis = ([], false))
-	plot!(p[1], zeros(0), color = :orangered, lw = 1.5, label = " Prediction", legend = true, axis = ([], false))
+	plot!(p[1], zeros(0) .* 1.2, lw = 1.5, linestyle = :dash,
+		label = " Input", legend = true, axis = ([], false))
+	plot!(p[1], zeros(0), color = :grays, lw = 1.5,
+		label = " Ground Truth", legend = true, axis = ([], false))
+	plot!(p[1], zeros(0), color = :orangered, lw = 1.5,
+		label = " Prediction", legend = true, axis = ([], false))
 	for c in 2:C
 		plot!(p[c], X_test[:, c] .* 1.2, lw = 1, linestyle = :dash)
 		plot!(p[c], y_test[:, t, c], color = :grays, lw = 1.2)
