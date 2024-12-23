@@ -1,71 +1,162 @@
+#!/usr/bin/env -S julia --project=examples
+
 using DeepONet
 using Flux
 using NumericalIntegration
 using Plots
 using Random
 
-Random.seed!(1)
+# Data preparation
 
 M, K, D = 80, 50, 1
 A, B = 0, 1
 
 points = range(A, stop = B, length = M)
-means = [0]
 params = collect(range(0.1, stop = 0.4, length = 5))
 stds = collect(range(1, stop = 5, length = 4))
+means = [0]
 
-U = generate_random_fields(points, D, M; means = means, stds = stds, params = params, K = K)
-S = cumul_integrate(points, U', dims = 1)
-N = size(U, 2)
+X = generate_random_fields(points, D, M; means = means, stds = stds, params = params, K = K)
+Y = cumul_integrate(points, X', dims = 1)
+N = size(X, 2)
 
-show = 30
-plot(points, U[:, 1:show], label = "", lw = 2)
-heatmap(U[:, 1:show]')
-heatmap(S[:, 1:show]')
+@info """Data shapes
+X $(size(X))
+y $(size(Y))
+"""
 
-i = 3
-plot(points, U[:, i], label = "f(points)", lw = 2)
-plot!(points, S[:, i], label = "F(points)", lw = 2)
+@info "M=$(M), N=$(N), K=$(K)"
 
 Us = zeros(Float32, (M, M * N))
 xs = zeros(Float32, (1, M * N))
 Ss = zeros(Float32, (1, M * N))
+
 for i in 1:N
 	a = (i - 1) * M + 1
 	b = i * M
-	Us[:, a:b] .= U[:, i]
+	Us[:, a:b] .= X[:, i]
 	xs[:, a:b] = collect(points)[1:M]
-	Ss[:, a:b] = S[:, i]
+	Ss[:, a:b] = Y[:, i]
 end
+
+# Data splitting
 
 train_uxs, test_uxs = uxs_split(Us, xs, Ss; split = 0.75, toshuffle = true)
-U_train, X_train, S_train = train_uxs
-U_test, X_test, S_test = test_uxs
+U_train, x_train, S_train = train_uxs
+U_test, x_test, S_test = test_uxs
 
-BATCH_SIZE = 256
-train_loader = Flux.DataLoader((U_train, X_train, S_train), batchsize = BATCH_SIZE);
-test_loader = Flux.DataLoader((U_test, X_test, S_test), batchsize = BATCH_SIZE);
+train_bs = 256
+test_bs = 1024
+train_loader = Flux.DataLoader((U_train, x_train, S_train), batchsize = train_bs)
+test_loader = Flux.DataLoader((U_test, x_test, S_test), batchsize = test_bs)
 
-model = DeepONetModel(M, 1, 20, [gelu, tanh],
-	branch_sizes = [40],
-	trunk_sizes = [40, 40],
-	output_sizes = [4],
+@info """
+Batch sizes
+Train: $(length(train_loader))
+Test:  $(length(test_loader))
+"""
+
+# Model training
+
+activations = [gelu, tanh]
+branch_sizes = [30]
+trunk_sizes = [30, 30]
+output_sizes = [1]
+model = DeepONetModel(
+	M, 1, 20, activations;
+	branch_sizes = branch_sizes,
+	trunk_sizes = trunk_sizes,
+	output_sizes = output_sizes,
 )
-opt_state = Flux.setup(Flux.Adam(0.0003), model)
-train_losses, test_losses = train!(model, opt_state, train_loader, test_loader)
-plot(train_losses; yaxis = "loss", label = "train", lw = 2)
-plot!(test_losses; yaxis = "loss", label = "test", lw = 2)
 
-fx = U[:, 100]
-Fx = S[:, 100]
-Gx = zeros(Float32, (M))
-u_ = zeros(Float32, ((M, M)))
-x_ = zeros(Float32, ((1, M)))
-for i in 1:M
-	u_[:, i] = fx
-	x_[1, i] = points[i]
+@info """
+Model summary
+Activations:  $(activations)
+Branch_sizes: $(branch_sizes)
+Trunk_sizes:  $(trunk_sizes)
+Output_sizes: $(output_sizes)
+"""
+
+@info "Training model"
+
+opt_state = Flux.setup(Flux.AdamW(0.0003), model)
+train_losses, test_losses = train!(model, opt_state, train_loader, test_loader)
+train_losses ./= train_bs
+test_losses ./= test_bs
+
+@info "Training complete"
+
+# Plot training and test losses
+
+p = plot(xtickfont = font(8), ytickfont = font(8), dpi = 300)
+plot!(p, train_losses, label = "Train Loss", lw = 2)
+plot!(p, test_losses, label = "Test Loss", lw = 2)
+savefig(p, "docs/assets/integrals_losses.png")
+
+@info "Loss plot saved"
+
+# Plot predictions
+
+C = 12
+p = plot(
+	layout = C,
+	dpi = 300,
+	size = (800, 500),
+	legend = false,
+	legendfontsize = 10,
+	tickfontsize = 1,
+	guidefontsize = 12,
+	xtickfontcolor = :white,
+	ytickfontcolor = :white,
+	linewidth = 2,
+	foreground_color_legend = nothing,
+)
+
+for c in 1:C
+	fx = X[:, c]
+	Fx = Y[:, c]
+	Gx = zeros(Float32, (M))
+	u_ = zeros(Float32, ((M, M)))
+	x_ = zeros(Float32, ((1, M)))
+	for i in 1:M
+		u_[:, i] = fx
+		x_[1, i] = points[i]
+	end
+	Gx = model(u_, x_)
+
+	if c == 1
+		plot!(p[c], zeros(0), label = " Input", linestyle = :dash, axis = ([], false))
+		plot!(p[c], zeros(0), label = " Ground Truth", axis = ([], false))
+		plot!(p[c], zeros(0), label = " Prediction", legend = :inside, axis = ([], false))
+		continue
+	end
+
+	r = maximum(abs.(Fx)) / maximum(abs.(fx))
+	plot!(p[c], points, fx .* r, lw = 1, linestyle = :dash)
+	plot!(p[c], points, Fx)
+	plot!(p[c], points, Gx')
 end
-Gx = model(u_, x_)
-plot(points, fx, label = "f", lw = 2)
-plot(points, Fx, label = "F", lw = 2)
-plot!(points, Gx', label = "G", lw = 2)
+savefig(p, "docs/assets/integrals_predictions.png")
+
+@info "Integrals predictions plot saved"
+
+# Plot fields
+
+C = 20
+layout = @layout [a; b c]
+p = plot(
+	points, X[:, 1:C],
+	layout = layout,
+	dpi = 300,
+	size = (800, 600),
+	legend = false,
+	tickfontsize = 1,
+	xtickfontcolor = :white,
+	ytickfontcolor = :white,
+	subplot = 1,
+)
+heatmap!(p, X[:, 1:C]', subplot = 2)
+heatmap!(p, Y[:, 1:C]', subplot = 3)
+savefig(p, "docs/assets/integrals_fields.png")
+
+@info "Fields plot saved"
