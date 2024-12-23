@@ -1,4 +1,5 @@
 using Aqua
+using Flux
 using DeepONet
 using Test
 

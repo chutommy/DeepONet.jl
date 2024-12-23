@@ -8,7 +8,7 @@
 	]
 	@testset "Single Field" begin
 		@testset "mean=$(p.mean) std=$(p.std) par=$(p.par)" for p in gparams
-			generator = DeepONet.RandomFieldGenerator(points, 1, resolution;
+			generator = RandomFieldGenerator(points, 1, resolution;
 				mean = p.mean, std = p.std, param = p.par)
 			@test size(generator()) == (resolution,)
 		end
@@ -17,7 +17,7 @@
 	fields = [1, 10, 100]
 	@testset "Multiple Fields" begin
 		@testset "mean=$(p.mean) std=$(p.std) par=$(p.par)" for p in gparams, s in fields
-			generator = DeepONet.RandomFieldGenerator(points, 1, resolution;
+			generator = RandomFieldGenerator(points, 1, resolution;
 				mean = p.mean, std = p.std, param = p.par)
 			@test size(generator(s)) == (resolution, s)
 		end
